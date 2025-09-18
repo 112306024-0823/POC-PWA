@@ -41,14 +41,22 @@
             >
               <q-tooltip>檢查變更記錄</q-tooltip>
             </q-btn>
-            <q-btn 
-              flat 
-              dense
-              icon="clear_all" 
-              @click="clearAllChanges"
-            >
-              <q-tooltip>清除所有變更記錄</q-tooltip>
-            </q-btn>
+       <q-btn 
+         flat 
+         dense
+         icon="clear_all" 
+         @click="clearAllChanges"
+       >
+         <q-tooltip>清除所有變更記錄</q-tooltip>
+       </q-btn>
+       <q-btn 
+         flat 
+         dense
+         icon="storage" 
+         @click="debugCRDT"
+       >
+         <q-tooltip>檢查 CRDT 狀態</q-tooltip>
+       </q-btn>
             <q-btn 
               flat 
               dense
@@ -695,18 +703,24 @@ const debugChanges = async () => {
   }
 };
 
-// 強制清理所有變更記錄
-const clearAllChanges = async () => {
-  try {
-    await db.clearAllUnsyncedChanges();
-    console.log('🧹 已清除所有未同步變更記錄');
-    notify('positive', '已清除所有變更記錄');
-    await updateSyncStatus();
-  } catch (error) {
-    console.error('清除變更記錄失敗:', error);
-    notify('negative', '清除變更記錄失敗');
-  }
-};
+       // 強制清理所有變更記錄
+       const clearAllChanges = async () => {
+         try {
+           await db.clearAllUnsyncedChanges();
+           console.log('🧹 已清除所有未同步變更記錄');
+           notify('positive', '已清除所有變更記錄');
+           await updateSyncStatus();
+         } catch (error) {
+           console.error('清除變更記錄失敗:', error);
+           notify('negative', '清除變更記錄失敗');
+         }
+       };
+
+       // 調試：檢查 CRDT 文檔狀態
+       const debugCRDT = () => {
+         syncService.debugCRDTDocument();
+         notify('info', 'CRDT 狀態已輸出到控制台');
+       };
 
 const handleRefresh = async () => {
   try {

@@ -52,7 +52,19 @@ export class SyncService {
   async applyLocalChanges() {
     const unsyncedChanges = await db.getUnsyncedChanges();
     console.log('應用本地變更:', unsyncedChanges.length, '個變更');
-    console.log('未同步變更詳情:', unsyncedChanges);
+    
+    if (unsyncedChanges.length === 0) {
+      console.log('沒有未同步的變更需要處理');
+      return;
+    }
+    
+    console.log('未同步變更詳情:', unsyncedChanges.map(c => ({
+      id: c.id,
+      operation: c.operation,
+      employeeId: c.employee.EmployeeID,
+      employeeName: `${c.employee.FirstName} ${c.employee.LastName}`,
+      synced: c.synced
+    })));
     
     // 記錄要清除的變更 ID
     const processedChangeIds: number[] = [];
@@ -71,16 +83,19 @@ export class SyncService {
             // 使用員工資料作為唯一標識
             const createKey = `new-${employeeChange.employee.FirstName}-${employeeChange.employee.LastName}-${employeeChange.timestamp}`;
             doc.employees[createKey] = newEmployee;
+            console.log('已添加新員工到 CRDT:', createKey);
             break;
           }
           case 'update': {
             // 更新員工時，使用 EmployeeID 作為鍵
             doc.employees[employeeChange.employee.EmployeeID] = employeeChange.employee;
+            console.log('已更新員工到 CRDT:', employeeChange.employee.EmployeeID);
             break;
           }
           case 'delete': {
             // 刪除員工時，使用 EmployeeID 作為鍵
             delete doc.employees[employeeChange.employee.EmployeeID];
+            console.log('已從 CRDT 刪除員工:', employeeChange.employee.EmployeeID);
             break;
           }
         }
@@ -140,7 +155,10 @@ export class SyncService {
       // 6. 更新本地資料庫
       await this.updateLocalDatabase();
 
-      // 7. 變更記錄已在 applyLocalChanges 中標記為已同步，無需重複處理
+      // 7. 清理 CRDT 文檔中的臨時記錄
+      this.cleanCRDTDocument();
+
+      // 8. 變更記錄已在 applyLocalChanges 中標記為已同步，無需重複處理
 
       await db.updateSyncState({ 
         isSyncing: false, 
@@ -212,21 +230,61 @@ export class SyncService {
 
   // 更新本地資料庫
   private async updateLocalDatabase(): Promise<void> {
-    const currentEmployees = await db.getAllEmployees();
-    const currentEmployeeIds = new Set(currentEmployees.map(e => e.EmployeeID));
+    console.log('開始更新本地資料庫...');
     
-    // 從 CRDT 文檔中獲取員工資料
+    // 從 CRDT 文檔中獲取員工資料，過濾掉臨時 ID 和臨時 key
     const documentEmployees = this.document.employees;
+    const validEmployees: Employee[] = [];
     
-    // 更新或新增員工
-    for (const [employeeId, employee] of Object.entries(documentEmployees)) {
-      await db.employees.put(employee);
-      currentEmployeeIds.delete(Number(employeeId));
+    for (const [key, employee] of Object.entries(documentEmployees)) {
+      // 跳過臨時 key（以 new- 或 temp- 開頭）
+      if (key.startsWith('new-') || key.startsWith('temp-')) {
+        console.log('跳過臨時員工記錄:', key);
+        continue;
+      }
+      
+      // 跳過臨時 ID（0 或負數）
+      if (employee.EmployeeID <= 0) {
+        console.log('跳過臨時 ID 員工:', employee.EmployeeID);
+        continue;
+      }
+      
+      validEmployees.push(employee);
     }
     
-    // 刪除在文檔中不存在的員工
-    for (const employeeId of currentEmployeeIds) {
-      await db.employees.delete(employeeId);
+    console.log('有效的員工記錄數量:', validEmployees.length);
+    
+    // 清空現有的員工表
+    await db.employees.clear();
+    
+    // 插入有效的員工記錄
+    for (const employee of validEmployees) {
+      await db.employees.put(employee);
+    }
+    
+    console.log('本地資料庫更新完成');
+  }
+
+  // 清理 CRDT 文檔中的臨時記錄
+  private cleanCRDTDocument(): void {
+    const documentEmployees = this.document.employees;
+    const validEmployees: { [key: string]: Employee } = {};
+    
+    for (const [key, employee] of Object.entries(documentEmployees)) {
+      // 只保留有效的員工記錄（有真實 EmployeeID 且不是臨時 key）
+      if (!key.startsWith('new-') && !key.startsWith('temp-') && employee.EmployeeID > 0) {
+        validEmployees[key] = employee;
+      }
+    }
+    
+    // 如果發現臨時記錄，清理文檔
+    if (Object.keys(validEmployees).length !== Object.keys(documentEmployees).length) {
+      console.log('清理 CRDT 文檔中的臨時記錄...');
+      this.document = change(this.document, (doc: EmployeeDocument) => {
+        doc.employees = validEmployees;
+        doc.lastModified = Date.now();
+      });
+      console.log('CRDT 文檔清理完成');
     }
   }
 
@@ -262,6 +320,27 @@ export class SyncService {
       lastSyncTimestamp: syncState?.lastSyncTimestamp || 0,
       unsyncedChangesCount: unsyncedCount,
     };
+  }
+
+  // 調試：檢查 CRDT 文檔狀態
+  debugCRDTDocument(): void {
+    const documentEmployees = this.document.employees;
+    const totalEmployees = Object.keys(documentEmployees).length;
+    const tempRecords = Object.keys(documentEmployees).filter(key => 
+      key.startsWith('new-') || key.startsWith('temp-')
+    ).length;
+    const validRecords = totalEmployees - tempRecords;
+    
+    console.log('🔍 CRDT 文檔狀態:');
+    console.log(`  總記錄數: ${totalEmployees}`);
+    console.log(`  有效記錄: ${validRecords}`);
+    console.log(`  臨時記錄: ${tempRecords}`);
+    
+    if (tempRecords > 0) {
+      console.log('  臨時記錄詳情:', Object.keys(documentEmployees).filter(key => 
+        key.startsWith('new-') || key.startsWith('temp-')
+      ));
+    }
   }
 
   // 定期同步（如果在線）
