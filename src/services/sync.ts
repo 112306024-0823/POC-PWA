@@ -54,6 +54,9 @@ export class SyncService {
     console.log('應用本地變更:', unsyncedChanges.length, '個變更');
     console.log('未同步變更詳情:', unsyncedChanges);
     
+    // 記錄要清除的變更 ID
+    const processedChangeIds: number[] = [];
+    
     for (const employeeChange of unsyncedChanges) {
       console.log('處理變更:', employeeChange.operation, employeeChange.employee);
       
@@ -83,6 +86,17 @@ export class SyncService {
         }
         doc.lastModified = employeeChange.timestamp;
       });
+      
+      // 記錄已處理的變更 ID
+      if (employeeChange.id !== undefined) {
+        processedChangeIds.push(employeeChange.id);
+      }
+    }
+    
+    // 立即標記已處理的變更為已同步，避免重複處理
+    if (processedChangeIds.length > 0) {
+      await db.markChangesSynced(processedChangeIds);
+      console.log('已標記變更為已同步:', processedChangeIds.length, '個');
     }
   }
 
@@ -126,9 +140,7 @@ export class SyncService {
       // 6. 更新本地資料庫
       await this.updateLocalDatabase();
 
-      // 7. 標記變更為已同步
-      const changeIds = unsyncedChanges.map(c => c.id).filter(id => id !== undefined) as number[];
-      await db.markChangesSynced(changeIds);
+      // 7. 變更記錄已在 applyLocalChanges 中標記為已同步，無需重複處理
 
       await db.updateSyncState({ 
         isSyncing: false, 

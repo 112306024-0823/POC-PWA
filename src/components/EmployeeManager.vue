@@ -44,6 +44,14 @@
             <q-btn 
               flat 
               dense
+              icon="clear_all" 
+              @click="clearAllChanges"
+            >
+              <q-tooltip>清除所有變更記錄</q-tooltip>
+            </q-btn>
+            <q-btn 
+              flat 
+              dense
               icon="refresh" 
               @click="handleRefresh"
             >
@@ -684,6 +692,19 @@ const debugChanges = async () => {
   } catch (error) {
     console.error('檢查變更記錄失敗:', error);
     notify('negative', '檢查變更記錄失敗');
+  }
+};
+
+// 強制清理所有變更記錄
+const clearAllChanges = async () => {
+  try {
+    await db.clearAllUnsyncedChanges();
+    console.log('🧹 已清除所有未同步變更記錄');
+    notify('positive', '已清除所有變更記錄');
+    await updateSyncStatus();
+  } catch (error) {
+    console.error('清除變更記錄失敗:', error);
+    notify('negative', '清除變更記錄失敗');
   }
 };
 
