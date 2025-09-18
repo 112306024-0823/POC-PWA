@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="employee-manager">
     <!-- 簡化的狀態指示器 -->
     <div class="status-bar q-pa-sm">
@@ -65,8 +65,8 @@
             >
               <q-tooltip>重新載入</q-tooltip>
             </q-btn>
-            <q-btn 
-              flat 
+        <q-btn 
+          flat 
               dense
               icon="download" 
               @click="testLoadData"
@@ -83,40 +83,40 @@
       <!-- 搜尋和新增區域 -->
       <div class="action-bar q-pa-md">
         <div class="row items-center q-gutter-md">
-          <div class="col">
-            <q-input
-              v-model="searchText"
+      <div class="col">
+        <q-input
+          v-model="searchText"
               placeholder="搜尋員工姓名、部門或職位..."
               outlined
-              dense
-              clearable
+          dense
+          clearable
               class="search-input"
-            >
+        >
               <template #prepend>
-                <q-icon name="search" />
-              </template>
-            </q-input>
-          </div>
-          <q-btn 
-            color="primary" 
+            <q-icon name="search" />
+          </template>
+        </q-input>
+      </div>
+        <q-btn 
+          color="primary" 
             icon="person_add" 
-            label="新增員工"
+          label="新增員工"
             class="add-btn"
             :loading="saving"
-            @click="openAddDialog"
-          />
-        </div>
+          @click="openAddDialog"
+        />
       </div>
+    </div>
 
-      <!-- 員工列表 -->
+    <!-- 員工列表 -->
       <div class="table-container">
-        <q-table
-          :rows="filteredEmployees"
-          :columns="columns"
-          row-key="EmployeeID"
-          :loading="loading"
-          flat
-          bordered
+    <q-table
+      :rows="filteredEmployees"
+      :columns="columns"
+      row-key="EmployeeID"
+      :loading="loading"
+      flat
+      bordered
           :rows-per-page-options="[10, 25, 50]"
           :pagination="{ rowsPerPage: 25 }"
           class="employee-table"
@@ -134,33 +134,33 @@
 
           <!-- 操作按鈕 -->
           <template #body-cell-actions="props">
-            <q-td :props="props">
+        <q-td :props="props">
               <q-btn-group flat>
-                <q-btn
-                  flat
-                  round
-                  dense
-                  icon="edit"
-                  color="primary"
+          <q-btn
+            flat
+            round
+            dense
+            icon="edit"
+            color="primary"
                   size="sm"
-                  @click="editEmployee(props.row)"
+            @click="editEmployee(props.row)"
                 >
                   <q-tooltip>編輯</q-tooltip>
                 </q-btn>
-                <q-btn
-                  flat
-                  round
-                  dense
-                  icon="delete"
-                  color="negative"
+          <q-btn
+            flat
+            round
+            dense
+            icon="delete"
+            color="negative"
                   size="sm"
-                  @click="confirmDelete(props.row)"
+            @click="confirmDelete(props.row)"
                 >
                   <q-tooltip>刪除</q-tooltip>
                 </q-btn>
               </q-btn-group>
-            </q-td>
-          </template>
+        </q-td>
+      </template>
 
           <!-- 空狀態 -->
           <template #no-data>
@@ -169,7 +169,7 @@
               <span>沒有找到員工資料</span>
             </div>
           </template>
-        </q-table>
+    </q-table>
       </div>
     </div>
 
@@ -354,6 +354,9 @@ import { useQuasar } from 'quasar';
 import { db } from '../services/database';
 import { syncService } from '../services/sync';
 import type { Employee } from '../types/employee';
+
+// 後端 API 基底網址（用於除錯拉資料等非同步流程）
+const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:3001/api';
 
 const $q = useQuasar();
 
@@ -727,7 +730,7 @@ const handleRefresh = async () => {
     const apiEmployees = await db.fetchEmployeesFromAPI();
     // 清理數據以確保可以序列化
     employees.value = apiEmployees.map((emp: RawEmployeeData) => cleanEmployeeData(emp));
-    await updateSyncStatus();
+  await updateSyncStatus();
     notify('positive', '資料已重新載入');
   } catch (error) {
     console.error('重新載入失敗:', error);
@@ -739,7 +742,7 @@ const testLoadData = async () => {
   console.log('測試載入資料按鈕被點擊');
   try {
     console.log('直接呼叫 fetch API...');
-    const response = await fetch('http://localhost:3001/api/employees');
+    const response = await fetch(`${API_BASE}/employees`);
     console.log('API 回應狀態:', response.status);
     
     if (!response.ok) {
@@ -760,10 +763,14 @@ const testLoadData = async () => {
   }
 };
 
+
+function makeTempEmployeeId() {
+  return -Date.now(); // 或改用 uuid()
+}
 const openAddDialog = () => {
   isEditing.value = false;
   currentEmployee.value = {
-    EmployeeID: 0, // 由後端生成
+    EmployeeID: makeTempEmployeeId(), // 暫時 ID，避免與伺服器 ID 衝突
     FirstName: '',
     LastName: '',
     Department: '',
@@ -803,98 +810,46 @@ const saveEmployee = async () => {
     const cleanCurrentEmployee = cleanEmployeeData(currentEmployee.value);
     
     if (isEditing.value) {
+      // ======= 更新員工（不直接打 REST）=======
       console.log('開始更新員工:', cleanCurrentEmployee);
-      
-      // 先更新本地資料庫（立即更新頁面）
+
+      // 1) 寫入本地 + 記錄變更
       await db.updateEmployee(cleanCurrentEmployee);
-      
-      // 立即更新頁面顯示
-      const index = employees.value.findIndex(emp => emp.EmployeeID === cleanCurrentEmployee.EmployeeID);
-      if (index !== -1) {
-        employees.value[index] = cleanCurrentEmployee;
+
+      // 2) 立即更新畫面
+      const idx = employees.value.findIndex(e => e.EmployeeID === cleanCurrentEmployee.EmployeeID);
+      if (idx !== -1) employees.value[idx] = cleanCurrentEmployee;
+
+      // 3) 在線就觸發同步（交給 syncService）
+      if (navigator.onLine) {
+        const ok = await syncService.manualSync();
+        notify(ok ? 'positive' : 'warning', ok ? '同步完成' : '同步失敗，稍後再試');
+      } else {
+        notify('warning', '離線模式：資料已保存到本地，將在連線後自動同步');
       }
-      
-       // 如果線上，嘗試同步到後端
-       if (isOnline.value) {
-         try {
-           const response = await fetch(`http://localhost:3001/api/employees/${cleanCurrentEmployee.EmployeeID}`, {
-             method: 'PUT',
-             headers: {
-               'Content-Type': 'application/json',
-             },
-             body: JSON.stringify(cleanCurrentEmployee)
-           });
-           
-           if (response.ok) {
-             const result = await response.json();
-             console.log('後端更新成功:', result);
-             
-             // API 成功後，清除相關的未同步變更記錄
-             await clearPendingChangesForEmployee(cleanCurrentEmployee.EmployeeID);
-             
-             notify('positive', '員工資料更新成功');
-           } else {
-             throw new Error(`更新失敗: ${response.status}   ${response.statusText}`);
-           }
-         } catch (error) {
-           console.warn('後端同步失敗，資料已保存到本地:', error);
-           notify('warning', '資料已保存到本地，將在連線後自動同步');
-         }
-       } else {
-         notify('warning', '離線模式：資料已保存到本地，將在連線後自動同步');
-       }
     } else {
-      console.log('開始新增員工:', cleanCurrentEmployee);
-      
-      // 新增員工時不設定 EmployeeID，讓後端自動生成
-      cleanCurrentEmployee.EmployeeID = 0;
-      
-      // 先保存到本地資料庫（立即更新頁面）
-      await db.addEmployee(cleanCurrentEmployee);
-      
-      // 立即更新頁面顯示
-      employees.value.push(cleanCurrentEmployee);
-      
-       // 如果線上，嘗試同步到後端
-       if (isOnline.value) {
-         try {
-           const response = await fetch('http://localhost:3001/api/employees', {
-             method: 'POST',
-             headers: {
-               'Content-Type': 'application/json',
-             },
-             body: JSON.stringify(cleanCurrentEmployee)
-           });
-           
-           if (response.ok) {
-             const result = await response.json();
-             console.log('後端新增成功:', result);
-             
-             // 更新本地資料庫中的 ID
-             cleanCurrentEmployee.EmployeeID = result.employee.EmployeeID;
-             await db.updateEmployee(cleanCurrentEmployee);
-             
-             // 更新頁面顯示
-             const index = employees.value.findIndex(emp => emp.EmployeeID === 0);
-             if (index !== -1) {
-               employees.value[index] = cleanCurrentEmployee;
-             }
-             
-             // API 成功後，清除相關的未同步變更記錄
-             await db.clearChangesByEmployeeData(cleanCurrentEmployee); // 根據員工資料清除變更記錄
-             
-             notify('positive', '員工新增成功');
-           } else {
-             throw new Error(`新增失敗: ${response.status} ${response.statusText}`);
-           }
-         } catch (error) {
-           console.warn('後端同步失敗，資料已保存到本地:', error);
-           notify('warning', '資料已保存到本地，將在連線後自動同步');
-         }
-       } else {
-         notify('warning', '離線模式：資料已保存到本地，將在連線後自動同步');
-       }
-    }
+  // ======= 新增員工（不直接打 REST；使用暫時 ID）=======
+  console.log('開始新增員工:', cleanCurrentEmployee);
+
+  // 若沒有合法的伺服器 ID，給一個暫時負數 ID（避免 0）
+  if (!cleanCurrentEmployee.EmployeeID || cleanCurrentEmployee.EmployeeID <= 0) {
+    cleanCurrentEmployee.EmployeeID = -Date.now(); // 或改成 uuid()
+  }
+
+  // 1) 寫入本地 + 記錄變更
+  await db.addEmployee(cleanCurrentEmployee);
+
+  // 2) 立即更新畫面
+  employees.value.push(cleanCurrentEmployee);
+
+  // 3) 在線就觸發同步（交給 syncService；伺服器會分配正式 ID）
+  if (navigator.onLine) {
+    const ok = await syncService.manualSync();
+    notify(ok ? 'positive' : 'warning', ok ? '同步完成（將回填正式 ID）' : '同步失敗，稍後再試');
+  } else {
+    notify('warning', '離線模式：資料已保存到本地，將在連線後自動同步');
+  }
+}
     
     // 更新同步狀態
     await updateSyncStatus();
@@ -927,32 +882,29 @@ const deleteEmployee = async () => {
     if (index !== -1) {
       employees.value.splice(index, 1);
     }
-    
-     // 如果線上，嘗試同步到後端
-     if (isOnline.value) {
-       try {
-         const response = await fetch(`http://localhost:3001/api/employees/${employeeToDelete.value.EmployeeID}`, {
-           method: 'DELETE'
-         });
-         
-         if (response.ok) {
-           const result = await response.json();
-           console.log('後端刪除成功:', result);
-           
-           // API 成功後，清除相關的未同步變更記錄
-           await clearPendingChangesForEmployee(employeeToDelete.value.EmployeeID);
-           
-           notify('positive', '員工刪除成功');
-         } else {
-           throw new Error(`刪除失敗: ${response.status} ${response.statusText}`);
-         }
-       } catch (error) {
-         console.warn('後端同步失敗，資料已從本地刪除:', error);
-         notify('warning', '資料已從本地刪除，將在連線後自動同步');
-       }
-     } else {
-       notify('warning', '離線模式：資料已從本地刪除，將在連線後自動同步');
-     }
+    // 在線：先呼叫後端 REST 刪除，以確保資料庫確實刪除；再進行 CRDT 同步
+    if (isOnline.value) {
+      try {
+        const resp = await fetch(`${API_BASE}/employees/${employeeToDelete.value.EmployeeID}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`);
+        }
+        // 後端已刪除，進一步同步 CRDT 狀態
+        const ok = await syncService.manualSync();
+        if (ok) {
+          await clearPendingChangesForEmployee(employeeToDelete.value.EmployeeID);
+          notify('positive', '員工刪除成功並已同步');
+        } else {
+          notify('warning', '已刪除，但同步狀態待完成');
+        }
+      } catch (e) {
+        console.warn('REST 刪除失敗，改由離線同步處理：', e);
+        const ok = await syncService.manualSync();
+        notify(ok ? 'positive' : 'warning', ok ? '刪除已同步' : '刪除變更尚未同步，稍後再試');
+      }
+    } else {
+      notify('warning', '離線模式：資料已從本地刪除，將在連線後自動同步');
+    }
     
     // 更新同步狀態
     await updateSyncStatus();
@@ -1007,7 +959,7 @@ onMounted(async () => {
     await updateSyncStatus();
   } catch (error) {
     console.error('從 API 載入失敗，嘗試本地資料:', error);
-    await loadEmployees();
+  await loadEmployees();
   }
   
   // 啟動定期同步
@@ -1071,4 +1023,4 @@ onMounted(async () => {
     max-width: none;
   }
 }
-</style>
+</style> 

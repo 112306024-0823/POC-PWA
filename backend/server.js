@@ -4,6 +4,7 @@ const bodyParser = require('body-parser');
 const sql = require('mssql');
 const Automerge = require('@automerge/automerge');
 const { v4: uuidv4 } = require('uuid');
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -13,13 +14,13 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.raw({ type: 'application/octet-stream', limit: '10mb' }));
 
-// 資料庫配置
+// 資料庫配置 (從 .env 檔案讀取)
 const dbConfig = {
-  user: 'sa',
-  password: 'Makalot1234',
-  server: '192.168.255.6',
-  port: 63422,
-  database: 'POC',
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  server: process.env.DB_SERVER,
+  port: parseInt(process.env.DB_PORT, 10),
+  database: process.env.DB_DATABASE,
   options: {
     encrypt: true,
     trustServerCertificate: true,
@@ -62,6 +63,14 @@ function sanitizeEmployee(employee) {
     if (value === null || value === undefined) return '';
     return String(value).trim();
   };
+  // 轉換為 JS Date 或 null（空字串或非法日期回傳 null）
+  const toJsDateOrNull = (value) => {
+    if (value === null || value === undefined) return null;
+    const s = String(value).trim();
+    if (!s) return null;
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  };
 
   return {
     EmployeeID: employee.EmployeeID,
@@ -69,13 +78,13 @@ function sanitizeEmployee(employee) {
     LastName: toSafeString(employee.LastName),
     Department: toSafeString(employee.Department),
     Position: toSafeString(employee.Position),
-    HireDate: employee.HireDate || null,
-    BirthDate: employee.BirthDate || null,
+    HireDate: toJsDateOrNull(employee.HireDate),
+    BirthDate: toJsDateOrNull(employee.BirthDate),
     Gender: toSafeString(employee.Gender),
     Email: toSafeString(employee.Email),
     PhoneNumber: toSafeString(employee.PhoneNumber),
     Address: toSafeString(employee.Address),
-    Status: toSafeString(employee.Status) || '在職'
+    Status: toSafeString(employee.Status) || 'Active'
   };
 }
 
@@ -121,7 +130,13 @@ async function loadExistingData() {
           Email: emp.Email || '',
           PhoneNumber: emp.PhoneNumber || '',
           Address: emp.Address || '',
-          Status: emp.Status || '在職'
+          Status: (function(){
+            const s = (emp.Status || '').toString();
+            if (!s) return 'Active';
+            if (s === '在職') return 'Active';
+            if (s === '離職') return 'Inactive';
+            return s;
+          })()
         };
       });
       doc.lastModified = Date.now();
@@ -134,91 +149,159 @@ async function loadExistingData() {
 }
 
 // 將 CRDT 文檔同步到資料庫
+// 將 CRDT 文檔同步到資料庫
 async function syncToDatabase() {
   const transaction = new sql.Transaction();
-  
+
   try {
     await transaction.begin();
-    
     const employees = currentDocument.employees;
-    
-    for (const [employeeId, employee] of Object.entries(employees)) {
-      // 跳過新增的員工（這些是離線新增的，需要特殊處理）
-      if (employeeId.startsWith('new-') || employeeId.startsWith('temp-')) {
-        console.log('跳過新增員工:', employeeId, employee);
+    try {
+      const deletedKeys = Object.entries(employees || {})
+        .filter(([k, v]) => v && String(v.Status ?? '').trim().toLowerCase() === 'deleted')
+        .map(([k]) => k);
+      console.log(`🧹 準備同步：總筆數=${Object.keys(employees||{}).length}，刪除標記=${deletedKeys.length} ->`, deletedKeys);
+    } catch {}
+
+    for (const [employeeIdRaw, employee] of Object.entries(employees)) {
+      // 先過濾掉 new-/temp- key
+      if (employeeIdRaw.startsWith('new-') || employeeIdRaw.startsWith('temp-')) {
+        console.log('⏩ 跳過臨時員工:', employeeIdRaw);
         continue;
       }
-      
-      // 軟刪除：若 Status 標記為 Deleted，執行實體刪除
-      if (employee.Status === 'Deleted') {
-        await transaction.request().query(`
-          DELETE FROM Employee WHERE EmployeeID = ${employeeId}
-        `);
-        // 從 CRDT 文檔中移除
+
+      // 再轉數字 ID
+      const employeeId = Number(employeeIdRaw);
+      if (isNaN(employeeId) || employeeId <= 0) {
+        console.warn('⚠️ 跳過無效 ID:', employeeIdRaw);
+        continue;
+      }
+
+      // 刪除（狀態大小寫與空白容忍）
+      const statusNorm = String(employee.Status ?? '').trim().toLowerCase();
+      if (statusNorm === 'deleted') {
+        console.log('🗑️ 準備刪除員工:', employeeId);
+        await transaction.request()
+          .input('EmployeeID', sql.Int, employeeId)
+          .query(`DELETE FROM [POC].[dbo].[Employee] WHERE EmployeeID = @EmployeeID`);
+
         currentDocument = Automerge.change(currentDocument, doc => {
-          delete doc.employees[employeeId];
+          delete doc.employees[employeeIdRaw];
           doc.lastModified = Date.now();
         });
         continue;
       }
 
-      // 檢查員工是否已存在
-      const checkResult = await transaction.request().query(`
-        SELECT COUNT(*) as count FROM Employee WHERE EmployeeID = ${employeeId}
-      `);
-      
-      if (checkResult.recordset[0].count > 0) {
-        // 更新現有員工
-        await transaction.request().query(`
-          UPDATE Employee SET
-            FirstName = '${employee.FirstName}',
-            LastName = '${employee.LastName}',
-            Department = '${employee.Department}',
-            Position = '${employee.Position}',
-            HireDate = ${employee.HireDate ? `'${employee.HireDate}'` : 'NULL'},
-            BirthDate = ${employee.BirthDate ? `'${employee.BirthDate}'` : 'NULL'},
-            Gender = '${employee.Gender}',
-            Email = '${employee.Email}',
-            PhoneNumber = '${employee.PhoneNumber}',
-            Address = '${employee.Address}',
-            Status = '${employee.Status}'
-          WHERE EmployeeID = ${employeeId}
-        `);
+      // 檢查是否存在
+      const check = await transaction.request()
+        .input('EmployeeID', sql.Int, employeeId)
+        .query(`SELECT COUNT(*) as count FROM [POC].[dbo].[Employee] WHERE EmployeeID = @EmployeeID`);
+
+      if (check.recordset[0].count > 0) {
+        // 更新
+        console.log('✏️ 更新員工:', employeeId);
+        // 先做欄位清洗，避免 EPARAM（Invalid string / Invalid date）
+        const toJsDateOrNull = (v) => {
+          if (!v) return null;
+          const d = new Date(v);
+          return isNaN(d.getTime()) ? null : d;
+        };
+        const safe = {
+          FirstName: String(employee.FirstName ?? ''),
+          LastName: String(employee.LastName ?? ''),
+          Department: String(employee.Department ?? ''),
+          Position: String(employee.Position ?? ''),
+          HireDate: toJsDateOrNull(employee.HireDate),
+          BirthDate: toJsDateOrNull(employee.BirthDate),
+          Gender: String(employee.Gender ?? ''),
+          Email: String(employee.Email ?? ''),
+          PhoneNumber: String(employee.PhoneNumber ?? ''),
+          Address: String(employee.Address ?? ''),
+          Status: String(employee.Status ?? '在職'),
+        };
+        await transaction.request()
+          .input('EmployeeID', sql.Int, employeeId)
+          .input('FirstName', sql.NVarChar, safe.FirstName)
+          .input('LastName', sql.NVarChar, safe.LastName)
+          .input('Department', sql.NVarChar, safe.Department)
+          .input('Position', sql.NVarChar, safe.Position)
+          .input('HireDate', sql.Date, safe.HireDate)
+          .input('BirthDate', sql.Date, safe.BirthDate)
+          .input('Gender', sql.NVarChar, safe.Gender)
+          .input('Email', sql.NVarChar, safe.Email)
+          .input('PhoneNumber', sql.NVarChar, safe.PhoneNumber)
+          .input('Address', sql.NVarChar, safe.Address)
+          .input('Status', sql.NVarChar, safe.Status)
+          .query(`
+            UPDATE [POC].[dbo].[Employee] SET
+              FirstName=@FirstName,
+              LastName=@LastName,
+              Department=@Department,
+              Position=@Position,
+              HireDate=@HireDate,
+              BirthDate=@BirthDate,
+              Gender=@Gender,
+              Email=@Email,
+              PhoneNumber=@PhoneNumber,
+              Address=@Address,
+              Status=@Status
+            WHERE EmployeeID=@EmployeeID
+          `);
       } else {
-        // 插入新員工
-        await transaction.request().query(`
-          INSERT INTO Employee (
-            FirstName, LastName, Department, Position,
-            HireDate, BirthDate, Gender, Email, PhoneNumber, Address, Status
-          ) VALUES (
-            
-            '${employee.FirstName}',
-            '${employee.LastName}',
-            '${employee.Department}',
-            '${employee.Position}',
-            ${employee.HireDate ? `'${employee.HireDate}'` : 'NULL'},
-            ${employee.BirthDate ? `'${employee.BirthDate}'` : 'NULL'},
-            '${employee.Gender}',
-            '${employee.Email}',
-            '${employee.PhoneNumber}',
-            '${employee.Address}',
-            '${employee.Status}'
-          )
-        `);
+        // 插入（注意：EmployeeID 不手動指定）
+        console.log('➕ 插入新員工:', employeeId);
+        const toJsDateOrNull = (v) => {
+          if (!v) return null;
+          const d = new Date(v);
+          return isNaN(d.getTime()) ? null : d;
+        };
+        const safeIns = {
+          FirstName: String(employee.FirstName ?? ''),
+          LastName: String(employee.LastName ?? ''),
+          Department: String(employee.Department ?? ''),
+          Position: String(employee.Position ?? ''),
+          HireDate: toJsDateOrNull(employee.HireDate),
+          BirthDate: toJsDateOrNull(employee.BirthDate),
+          Gender: String(employee.Gender ?? ''),
+          Email: String(employee.Email ?? ''),
+          PhoneNumber: String(employee.PhoneNumber ?? ''),
+          Address: String(employee.Address ?? ''),
+          Status: String(employee.Status ?? '在職'),
+        };
+        await transaction.request()
+          .input('FirstName', sql.NVarChar, safeIns.FirstName)
+          .input('LastName', sql.NVarChar, safeIns.LastName)
+          .input('Department', sql.NVarChar, safeIns.Department)
+          .input('Position', sql.NVarChar, safeIns.Position)
+          .input('HireDate', sql.Date, safeIns.HireDate)
+          .input('BirthDate', sql.Date, safeIns.BirthDate)
+          .input('Gender', sql.NVarChar, safeIns.Gender)
+          .input('Email', sql.NVarChar, safeIns.Email)
+          .input('PhoneNumber', sql.NVarChar, safeIns.PhoneNumber)
+          .input('Address', sql.NVarChar, safeIns.Address)
+          .input('Status', sql.NVarChar, safeIns.Status)
+          .query(`
+            INSERT INTO [POC].[dbo].[Employee] (
+              FirstName, LastName, Department, Position,
+              HireDate, BirthDate, Gender, Email, PhoneNumber, Address, Status
+            ) VALUES (
+              @FirstName, @LastName, @Department, @Position,
+              @HireDate, @BirthDate, @Gender, @Email, @PhoneNumber, @Address, @Status
+            )
+          `);
       }
     }
-    
-    // 警告：不可在此用 NOT IN 全量刪除，避免誤刪資料。
-    // 若要支援刪除，應透過顯式 delete 事件或 soft-delete 欄位進行。
-    
+
     await transaction.commit();
-    console.log('Database synchronized successfully');
+    console.log('✅ Database synchronized successfully');
   } catch (err) {
     await transaction.rollback();
-    console.error('Database sync failed:', err);
+    console.error('❌ Database sync failed:', err);
     throw err;
   }
 }
+
+
 
 // API 路由
 
@@ -253,10 +336,18 @@ app.post('/api/sync/document', async (req, res) => {
     const hasChanges = !Automerge.equals(oldDocument, currentDocument);
     
     if (hasChanges) {
-      // 先處理離線新增的員工
+      // 調試：輸出合併後的 Deleted 條目
+      try {
+        const delIds = Object.entries(currentDocument.employees || {})
+          .filter(([k, v]) => v && v.Status === 'Deleted')
+          .map(([k]) => k);
+        console.log('🔎 合併後 Deleted 條目 IDs:', delIds);
+      } catch (e) {
+        console.warn('無法列出 Deleted 條目:', e);
+      }
       await processOfflineEmployees();
       
-      // 同步到資料庫
+      // 同步到資料庫（只處理已有 ID 的更新/刪除）
       await syncToDatabase();
       console.log('Document merged and synced to database');
     }
@@ -310,27 +401,32 @@ app.post('/api/employees', async (req, res) => {
     
     console.log('準備插入員工資料:', employee);
     
-    // 插入員工資料（不包含 EmployeeID，讓資料庫自動生成）
-    const result = await sql.query(`
-      INSERT INTO [POC].[dbo].[Employee] (
-        FirstName, LastName, Department, Position,
-        HireDate, BirthDate, Gender, Email, PhoneNumber, Address, Status
-      )
-      OUTPUT INSERTED.EmployeeID
-      VALUES (
-        '${(employee.FirstName || '').replace(/'/g, "''")}',
-        '${(employee.LastName || '').replace(/'/g, "''")}',
-        '${(employee.Department || '').replace(/'/g, "''")}',
-        '${(employee.Position || '').replace(/'/g, "''")}',
-        ${employee.HireDate ? `'${employee.HireDate}'` : 'NULL'},
-        ${employee.BirthDate ? `'${employee.BirthDate}'` : 'NULL'},
-        '${(employee.Gender || '').replace(/'/g, "''")}',
-        '${(employee.Email || '').replace(/'/g, "''")}',
-        '${(employee.PhoneNumber || '').replace(/'/g, "''")}',
-        '${(employee.Address || '').replace(/'/g, "''")}',
-        '${(employee.Status || 'Active').replace(/'/g, "''")}'
-      )
-    `);
+    // 使用參數化查詢來防止 SQL 注入
+    const sanitized = sanitizeEmployee(employee);
+    const request = new sql.Request();
+    const result = await request
+      .input('FirstName', sql.NVarChar, sanitized.FirstName)
+      .input('LastName', sql.NVarChar, sanitized.LastName)
+      .input('Department', sql.NVarChar, sanitized.Department)
+      .input('Position', sql.NVarChar, sanitized.Position)
+      .input('HireDate', sql.Date, sanitized.HireDate)
+      .input('BirthDate', sql.Date, sanitized.BirthDate)
+      .input('Gender', sql.NVarChar, sanitized.Gender)
+      .input('Email', sql.NVarChar, sanitized.Email)
+      .input('PhoneNumber', sql.NVarChar, sanitized.PhoneNumber)
+      .input('Address', sql.NVarChar, sanitized.Address)
+      .input('Status', sql.NVarChar, sanitized.Status)
+      .query(`
+        INSERT INTO [POC].[dbo].[Employee] (
+          FirstName, LastName, Department, Position,
+          HireDate, BirthDate, Gender, Email, PhoneNumber, Address, Status
+        )
+        OUTPUT INSERTED.EmployeeID
+        VALUES (
+          @FirstName, @LastName, @Department, @Position,
+          @HireDate, @BirthDate, @Gender, @Email, @PhoneNumber, @Address, @Status
+        )
+      `);
     
     console.log('SQL 插入成功:', result);
     
@@ -383,22 +479,37 @@ app.put('/api/employees/:id', async (req, res) => {
       });
     }
     
-    // 使用簡單的字符串更新
-    const result = await sql.query(`
-      UPDATE [POC].[dbo].[Employee] SET
-        FirstName = '${(employee.FirstName || '').replace(/'/g, "''")}',
-        LastName = '${(employee.LastName || '').replace(/'/g, "''")}',
-        Department = '${(employee.Department || '').replace(/'/g, "''")}',
-        Position = '${(employee.Position || '').replace(/'/g, "''")}',
-        HireDate = ${employee.HireDate ? `'${employee.HireDate}'` : 'NULL'},
-        BirthDate = ${employee.BirthDate ? `'${employee.BirthDate}'` : 'NULL'},
-        Gender = '${(employee.Gender || '').replace(/'/g, "''")}',
-        Email = '${(employee.Email || '').replace(/'/g, "''")}',
-        PhoneNumber = '${(employee.PhoneNumber || '').replace(/'/g, "''")}',
-        Address = '${(employee.Address || '').replace(/'/g, "''")}',
-        Status = '${(employee.Status || 'Active').replace(/'/g, "''")}'
-      WHERE EmployeeID = ${employeeId}
-    `);
+    // 使用參數化查詢來防止 SQL 注入
+    const sanitized = sanitizeEmployee(employee);
+    const request = new sql.Request();
+    const result = await request
+      .input('EmployeeID', sql.Int, employeeId)
+      .input('FirstName', sql.NVarChar, sanitized.FirstName)
+      .input('LastName', sql.NVarChar, sanitized.LastName)
+      .input('Department', sql.NVarChar, sanitized.Department)
+      .input('Position', sql.NVarChar, sanitized.Position)
+      .input('HireDate', sql.Date, sanitized.HireDate)
+      .input('BirthDate', sql.Date, sanitized.BirthDate)
+      .input('Gender', sql.NVarChar, sanitized.Gender)
+      .input('Email', sql.NVarChar, sanitized.Email)
+      .input('PhoneNumber', sql.NVarChar, sanitized.PhoneNumber)
+      .input('Address', sql.NVarChar, sanitized.Address)
+      .input('Status', sql.NVarChar, sanitized.Status)
+      .query(`
+        UPDATE [POC].[dbo].[Employee] SET
+          FirstName = @FirstName,
+          LastName = @LastName,
+          Department = @Department,
+          Position = @Position,
+          HireDate = @HireDate,
+          BirthDate = @BirthDate,
+          Gender = @Gender,
+          Email = @Email,
+          PhoneNumber = @PhoneNumber,
+          Address = @Address,
+          Status = @Status
+        WHERE EmployeeID = @EmployeeID
+      `);
     
     console.log('SQL 更新成功:', result);
     
@@ -439,8 +550,11 @@ app.delete('/api/employees/:id', async (req, res) => {
     
     console.log('DELETE /api/employees/:id - 收到請求:', { employeeId });
     
-    // 使用簡單的字符串刪除
-    const result = await sql.query(`DELETE FROM [POC].[dbo].[Employee] WHERE EmployeeID = ${employeeId}`);
+    // 使用參數化查詢來防止 SQL 注入
+    const request = new sql.Request();
+    const result = await request
+      .input('EmployeeID', sql.Int, employeeId)
+      .query(`DELETE FROM [POC].[dbo].[Employee] WHERE EmployeeID = @EmployeeID`);
     
     console.log('SQL 刪除成功:', result);
     
@@ -480,43 +594,54 @@ async function processOfflineEmployees() {
   // 為每個新員工生成真實 ID 並插入資料庫
   for (const { key, employee } of newEmployees) {
     try {
-      // 統一轉字串與防止 .replace 對非字串拋錯
-      const toSafeString = (v) => String(v ?? '').replace(/'/g, "''");
-      const toSqlDateOrNull = (v) => {
-        const s = typeof v === 'string' ? v : '';
-        return s ? `'${s}'` : 'NULL';
-      };
-
       const sanitized = sanitizeEmployee(employee);
 
-      // 插入員工資料（不包含 EmployeeID，讓資料庫自動生成）
-      const result = await sql.query(`
-        INSERT INTO [POC].[dbo].[Employee] (
-          FirstName, LastName, Department, Position,
-          HireDate, BirthDate, Gender, Email, PhoneNumber, Address, Status
-        )
-        OUTPUT INSERTED.EmployeeID
-        VALUES (
-          '${toSafeString(sanitized.FirstName)}',
-          '${toSafeString(sanitized.LastName)}',
-          '${toSafeString(sanitized.Department)}',
-          '${toSafeString(sanitized.Position)}',
-          ${toSqlDateOrNull(sanitized.HireDate)},
-          ${toSqlDateOrNull(sanitized.BirthDate)},
-          '${toSafeString(sanitized.Gender)}',
-          '${toSafeString(sanitized.Email)}',
-          '${toSafeString(sanitized.PhoneNumber)}',
-          '${toSafeString(sanitized.Address)}',
-          '${toSafeString(sanitized.Status || 'Active')}'
-        )
-      `);
-      
+      // 使用參數化查詢插入新員工
+      const request = new sql.Request();
+      const result = await request
+        .input('FirstName', sql.NVarChar, sanitized.FirstName)
+        .input('LastName', sql.NVarChar, sanitized.LastName)
+        .input('Department', sql.NVarChar, sanitized.Department)
+        .input('Position', sql.NVarChar, sanitized.Position)
+        .input('HireDate', sql.Date, sanitized.HireDate)
+        .input('BirthDate', sql.Date, sanitized.BirthDate)
+        .input('Gender', sql.NVarChar, sanitized.Gender)
+        .input('Email', sql.NVarChar, sanitized.Email)
+        .input('PhoneNumber', sql.NVarChar, sanitized.PhoneNumber)
+        .input('Address', sql.NVarChar, sanitized.Address)
+        .input('Status', sql.NVarChar, sanitized.Status)
+        .query(`
+          INSERT INTO [POC].[dbo].[Employee] (
+            FirstName, LastName, Department, Position,
+            HireDate, BirthDate, Gender, Email, PhoneNumber, Address, Status
+          )
+          OUTPUT INSERTED.EmployeeID
+          VALUES (
+            @FirstName, @LastName, @Department, @Position,
+            @HireDate, @BirthDate, @Gender, @Email, @PhoneNumber, @Address, @Status
+          )
+        `);
+
       const newEmployeeId = result.recordset[0].EmployeeID;
       console.log('離線員工已插入，新 ID:', newEmployeeId, '原鍵:', key);
       
       // 更新 CRDT 文檔，將臨時鍵替換為真實 ID
       currentDocument = Automerge.change(currentDocument, doc => {
-        const updatedEmployee = { ...employee, EmployeeID: newEmployeeId };
+        // 建立新物件，避免引用同一個 existing object 觸發 Automerge RangeError
+        const updatedEmployee = {
+          EmployeeID: newEmployeeId,
+          FirstName: String(employee.FirstName || ''),
+          LastName: String(employee.LastName || ''),
+          Department: String(employee.Department || ''),
+          Position: String(employee.Position || ''),
+          HireDate: employee.HireDate || null,
+          BirthDate: employee.BirthDate || null,
+          Gender: String(employee.Gender || ''),
+          Email: String(employee.Email || ''),
+          PhoneNumber: String(employee.PhoneNumber || ''),
+          Address: String(employee.Address || ''),
+          Status: String(employee.Status || 'Active')
+        };
         delete doc.employees[key];
         doc.employees[String(newEmployeeId)] = updatedEmployee;
         doc.lastModified = Date.now();

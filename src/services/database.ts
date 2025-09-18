@@ -9,20 +9,46 @@ export class EmployeeDatabase extends Dexie {
   constructor() {
     super('EmployeeDatabase');
     this.version(1).stores({
-      employees: 'EmployeeID, FirstName, LastName, Department, Position, Email',
+      employees: '++id,EmployeeID, FirstName, LastName, Department, Position, Email',
       changes: '++id, EmployeeID, timestamp, operation, synced',
       syncState: '++id, lastSyncTimestamp'
     });
-    
-    // 版本 2: 清理舊的 changes 數據，確保 synced 欄位使用 boolean
-    this.version(2).stores({
-      employees: 'EmployeeID, FirstName, LastName, Department, Position, Email',
-      changes: '++id, EmployeeID, timestamp, operation, synced',
-      syncState: '++id, lastSyncTimestamp'
-    }).upgrade(async tx => {
-      // 清除所有舊的 changes 記錄，重新開始
-      await tx.table('changes').clear();
-    });
+
+    // v2: 將 employees 的主鍵改為 EmployeeID，避免重複與更新失敗
+    this.version(2)
+      .stores({
+        // 使用 EmployeeID 作為主鍵
+        employees: 'EmployeeID, FirstName, LastName, Department, Position, Email',
+        changes: '++id, EmployeeID, timestamp, operation, synced',
+        syncState: '++id, lastSyncTimestamp'
+      })
+      .upgrade(async (tx) => {
+        const oldTable = tx.table('employees');
+        const all = await oldTable.toArray();
+        // 轉換：確保 EmployeeID 是 number 並唯一
+        const migrated = all
+          .map((e: any) => ({
+            EmployeeID: Number(e?.EmployeeID ?? 0),
+            FirstName: String(e?.FirstName ?? ''),
+            LastName: String(e?.LastName ?? ''),
+            Department: String(e?.Department ?? ''),
+            Position: String(e?.Position ?? ''),
+            HireDate: String(e?.HireDate ?? ''),
+            BirthDate: String(e?.BirthDate ?? ''),
+            Gender: String(e?.Gender ?? ''),
+            Email: String(e?.Email ?? ''),
+            PhoneNumber: String(e?.PhoneNumber ?? ''),
+            Address: String(e?.Address ?? ''),
+            Status: String(e?.Status ?? 'Active'),
+          }))
+          // 過濾掉沒有合法 EmployeeID 的紀錄（<=0 的視為暫時資料，交由同步後重建）
+          .filter((e) => Number.isInteger(e.EmployeeID) && e.EmployeeID > 0);
+
+        if (migrated.length) {
+          await tx.table('employees').clear();
+          await tx.table('employees').bulkPut(migrated);
+        }
+      });
   }
 
   // 新增員工
@@ -52,11 +78,11 @@ export class EmployeeDatabase extends Dexie {
   }
 
   // 刪除員工
-   async deleteEmployee(employeeId: number): Promise<void> {
-    const employee = await this.employees.get(employeeId);
+  async deleteEmployee(employeeId: number): Promise<void> {
+    const employee = await this.employees.where('EmployeeID').equals(employeeId).first();
     if (employee) {
       await this.transaction('rw', this.employees, this.changes, async () => {
-        await this.employees.delete(employeeId);
+        await this.employees.where('EmployeeID').equals(employeeId).delete();
         await this.changes.add({
           employee,
           timestamp: Date.now(),
@@ -136,21 +162,47 @@ export class EmployeeDatabase extends Dexie {
       } as SyncState);
     }
   }
+  
+  private normalizeEmployee(raw: unknown): Employee {
+    const toDate = (d: unknown): string => {
+      if (d == null) return '';
+      const dt = new Date(String(d));
+      return Number.isNaN(dt.getTime())
+        ? ''
+        : `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    };
 
+    const obj = (typeof raw === 'object' && raw !== null) ? (raw as Record<string, unknown>) : {};
+
+    return {
+      EmployeeID: Number(obj.EmployeeID ?? 0),
+      FirstName: String(obj.FirstName ?? ''),
+      LastName: String(obj.LastName ?? ''),
+      Department: String(obj.Department ?? ''),
+      Position: String(obj.Position ?? ''),
+      HireDate: toDate(obj.HireDate),
+      BirthDate: toDate(obj.BirthDate),
+      Gender: String(obj.Gender ?? ''),
+      Email: String(obj.Email ?? ''),
+      PhoneNumber: String(obj.PhoneNumber ?? ''),
+      Address: String(obj.Address ?? ''),
+      Status: String(obj.Status ?? 'Active')
+    };
+  }
   // 直接從 API 獲取員工數據（測試用）
   async fetchEmployeesFromAPI(): Promise<Employee[]> {
-    const response = await fetch('http://localhost:3001/api/employees');
+    const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:3001/api';
+    const response = await fetch(`${API_BASE}/employees`);
     if (!response.ok) {
       throw new Error(`API 請求失敗: ${response.status} ${response.statusText}`);
     }
-    const employees: Employee[] = await response.json();
-    
-    // 將數據也存儲到本地數據庫
+    const json = await response.json() as unknown;
+    const arr = Array.isArray(json) ? json : [];
+    const normalized = arr.map((r) => this.normalizeEmployee(r));
     await this.employees.clear();
-    await this.employees.bulkPut(employees);
-    
-    return employees;
+    await this.employees.bulkPut(normalized);
+    return normalized; // 回傳已正規化的資料
   }
-}
+  }
 
 export const db = new EmployeeDatabase(); 
