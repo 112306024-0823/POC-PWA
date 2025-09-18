@@ -36,6 +36,14 @@
             <q-btn 
               flat 
               dense
+              icon="bug_report" 
+              @click="debugChanges"
+            >
+              <q-tooltip>檢查變更記錄</q-tooltip>
+            </q-btn>
+            <q-btn 
+              flat 
+              dense
               icon="refresh" 
               @click="handleRefresh"
             >
@@ -596,7 +604,20 @@ const loadEmployees = async () => {
 const clearPendingChangesForEmployee = async (employeeId: number) => {
   try {
     const allChanges = await db.getUnsyncedChanges();
-    const employeeChanges = allChanges.filter(change => change.employee.EmployeeID === employeeId);
+    
+    // 修復：按多種條件匹配變更記錄
+    const employeeChanges = allChanges.filter(change => {
+      // 1. 直接匹配 EmployeeID
+      if (change.employee.EmployeeID === employeeId) return true;
+      
+      // 2. 匹配臨時 ID (0 或負數)
+      if (employeeId === 0 && change.employee.EmployeeID <= 0) return true;
+      
+      // 3. 匹配姓名和操作類型（用於離線新增後的情況）
+      if (change.operation === 'create' && change.employee.EmployeeID <= 0) return true;
+      
+      return false;
+    });
     
     if (employeeChanges.length > 0) {
       const changeIds = employeeChanges.map(c => c.id).filter(id => id !== undefined) as number[];
@@ -636,6 +657,33 @@ const handleSync = async () => {
   } catch (error) {
     console.error('同步失敗:', error);
     notify('negative', '同步時發生錯誤');
+  }
+};
+
+// 調試功能：檢查變更記錄
+const debugChanges = async () => {
+  try {
+    const allChanges = await db.getUnsyncedChanges();
+    console.log('🔍 當前未同步變更記錄:', allChanges.length, '個');
+    allChanges.forEach((change, index) => {
+      console.log(`變更 ${index + 1}:`, {
+        id: change.id,
+        operation: change.operation,
+        employeeId: change.employee.EmployeeID,
+        employeeName: `${change.employee.FirstName} ${change.employee.LastName}`,
+        synced: change.synced,
+        timestamp: new Date(change.timestamp).toLocaleString()
+      });
+    });
+    
+    if (allChanges.length > 0) {
+      notify('info', `發現 ${allChanges.length} 個未同步變更，請查看控制台`);
+    } else {
+      notify('positive', '沒有未同步的變更');
+    }
+  } catch (error) {
+    console.error('檢查變更記錄失敗:', error);
+    notify('negative', '檢查變更記錄失敗');
   }
 };
 
@@ -798,8 +846,7 @@ const saveEmployee = async () => {
              }
              
              // API 成功後，清除相關的未同步變更記錄
-             await clearPendingChangesForEmployee(0); // 清除臨時 ID 的變更記錄
-             await clearPendingChangesForEmployee(cleanCurrentEmployee.EmployeeID); // 清除新 ID 的變更記錄
+             await db.clearChangesByEmployeeData(cleanCurrentEmployee); // 根據員工資料清除變更記錄
              
              notify('positive', '員工新增成功');
            } else {

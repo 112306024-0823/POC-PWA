@@ -61,6 +61,7 @@ export class SyncService {
         switch (employeeChange.operation) {
           case 'create': {
             // 新增員工時，不包含 EmployeeID，讓後端自動生成
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { EmployeeID: _, ...employeeData } = employeeChange.employee;
             const newEmployee = { ...employeeData, EmployeeID: 0 };
             

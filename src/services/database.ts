@@ -82,6 +82,32 @@ export class EmployeeDatabase extends Dexie {
     await this.changes.where('id').anyOf(changeIds).modify({ synced: true });
   }
 
+  // 清除所有未同步的變更記錄（用於重置）
+  async clearAllUnsyncedChanges(): Promise<void> {
+    await this.changes.filter(change => change.synced === false).delete();
+  }
+
+  // 根據員工資料清除變更記錄（用於離線新增後）
+  async clearChangesByEmployeeData(employeeData: Partial<Employee>): Promise<void> {
+    const changes = await this.changes.filter(change => change.synced === false).toArray();
+    
+    const matchingChanges = changes.filter(change => {
+      const emp = change.employee;
+      return (
+        emp.FirstName === employeeData.FirstName &&
+        emp.LastName === employeeData.LastName &&
+        emp.Email === employeeData.Email &&
+        change.operation === 'create'
+      );
+    });
+    
+    if (matchingChanges.length > 0) {
+      const changeIds = matchingChanges.map(c => c.id).filter(id => id !== undefined) as number[];
+      await this.markChangesSynced(changeIds);
+      console.log(`根據員工資料清除了 ${changeIds.length} 個變更記錄`);
+    }
+  }
+
   // 清除已同步的變更（保留最近的記錄）
   async cleanupSyncedChanges(): Promise<void> {
     const cutoffTime = Date.now() - (7 * 24 * 60 * 60 * 1000); // 保留7天
