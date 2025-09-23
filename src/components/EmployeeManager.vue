@@ -26,52 +26,10 @@
             <q-btn 
               flat 
               dense
-              icon="sync" 
-              :loading="isSyncing"
-              :disable="!isOnline"
-              @click="handleSync"
-            >
-              <q-tooltip>同步資料</q-tooltip>
-            </q-btn>
-            <q-btn 
-              flat 
-              dense
-              icon="bug_report" 
-              @click="debugChanges"
-            >
-              <q-tooltip>檢查變更記錄</q-tooltip>
-            </q-btn>
-       <q-btn 
-         flat 
-         dense
-         icon="clear_all" 
-         @click="clearAllChanges"
-       >
-         <q-tooltip>清除所有變更記錄</q-tooltip>
-       </q-btn>
-       <q-btn 
-         flat 
-         dense
-         icon="storage" 
-         @click="debugCRDT"
-       >
-         <q-tooltip>檢查 CRDT 狀態</q-tooltip>
-       </q-btn>
-            <q-btn 
-              flat 
-              dense
               icon="refresh" 
               @click="handleRefresh"
             >
               <q-tooltip>重新載入</q-tooltip>
-            </q-btn>
-        <q-btn 
-          flat 
-              dense
-              icon="download" 
-              @click="testLoadData"
-            >
-              <q-tooltip>測試載入資料</q-tooltip>
             </q-btn>
           </q-btn-group>
         </div>
@@ -659,71 +617,16 @@ const updateSyncStatus = async () => {
   }
 };
 
-const handleSync = async () => {
-  if (!isOnline.value) {
-    notify('warning', '目前離線，無法同步');
-    return;
-  }
-
-  try {
-    const success = await syncService.manualSync();
-    if (success) {
-      await loadEmployees();
-      notify('positive', '同步完成');
-    } else {
-      notify('warning', '同步失敗，請檢查網路連線');
-    }
-  } catch (error) {
-    console.error('同步失敗:', error);
-    notify('negative', '同步時發生錯誤');
-  }
-};
+// 已移除手動同步功能
 
 // 調試功能：檢查變更記錄
-const debugChanges = async () => {
-  try {
-    const allChanges = await db.getUnsyncedChanges();
-    console.log('當前未同步變更記錄:', allChanges.length, '個');
-    allChanges.forEach((change, index) => {
-      console.log(`變更 ${index + 1}:`, {
-        id: change.id,
-        operation: change.operation,
-        employeeId: change.employee.EmployeeID,
-        employeeName: `${change.employee.FirstName} ${change.employee.LastName}`,
-        synced: change.synced,
-        timestamp: new Date(change.timestamp).toLocaleString()
-      });
-    });
-    
-    if (allChanges.length > 0) {
-      notify('info', `發現 ${allChanges.length} 個未同步變更，請查看控制台`);
-    } else {
-      notify('positive', '沒有未同步的變更');
-    }
-  } catch (error) {
-    console.error('檢查變更記錄失敗:', error);
-    notify('negative', '檢查變更記錄失敗');
-  }
-};
+// 已移除變更記錄除錯
 
        // 強制清理所有變更記錄
-       const clearAllChanges = async () => {
-         try {
-           await db.clearAllUnsyncedChanges();
-           console.log('🧹 已清除所有未同步變更記錄');
-           notify('positive', '已清除所有變更記錄');
-           await updateSyncStatus();
-         } catch (error) {
-           console.error('清除變更記錄失敗:', error);
-           notify('negative', '清除變更記錄失敗');
-         }
-       };
+      // 已移除清除變更記錄
 
        // 調試：檢查 CRDT 文檔狀態
-       const debugCRDT = () => {
-         syncService.debugCRDTDocument();
-         notify('info', 'CRDT 狀態已輸出到控制台');
-       };
+      // 已移除 CRDT 除錯
 
 const handleRefresh = async () => {
   try {
@@ -738,30 +641,7 @@ const handleRefresh = async () => {
   }
 };
 
-const testLoadData = async () => {
-  console.log('測試載入資料按鈕被點擊');
-  try {
-    console.log('直接呼叫 fetch API...');
-    const response = await fetch(`${API_BASE}/employees`);
-    console.log('API 回應狀態:', response.status);
-    
-    if (!response.ok) {
-      throw new Error(`API 請求失敗: ${response.status} ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    console.log('API 回應資料:', data);
-    console.log('資料筆數:', data.length);
-    
-    // 清理數據以確保可以序列化
-    employees.value = data.map((emp: RawEmployeeData) => cleanEmployeeData(emp));
-    
-    notify('positive', `成功載入 ${data.length} 筆員工資料`);
-  } catch (error) {
-    console.error('測試載入失敗:', error);
-    notify('negative', `測試載入失敗: ${error instanceof Error ? error.message : String(error)}`);
-  }
-};
+// 已移除測試載入
 
 
 function makeTempEmployeeId() {
