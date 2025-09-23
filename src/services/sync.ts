@@ -33,25 +33,39 @@ export class SyncService {
   }
 
   // 設置網路狀態監聽器
-  private onlineSyncTimer?: number;
-
+  private isSyncInProgress: boolean = false; // 防止重複同步
+  private onlineSyncTimer?: number;  // 去抖定時器
+  
   private setupNetworkListeners() {
     window.addEventListener('online', () => {
       console.log('Network online - starting sync');
-      if (this.onlineSyncTimer) clearTimeout(this.onlineSyncTimer);
+  
+      // 防止重複同步
+      if (this.isSyncInProgress) {
+        console.log('同步已在進行中，跳過此次觸發');
+        return; // 如果正在同步，就跳過這次同步
+      }
+  
+      // 清除現有的定時器
+      if (this.onlineSyncTimer) {
+        clearTimeout(this.onlineSyncTimer);
+      }
+  
+      // 去抖處理：延遲500ms後開始同步，避免頻繁觸發
       this.onlineSyncTimer = window.setTimeout(() => {
-        void this.syncWithServer();
-      }, 500); // 去抖 500ms，等 IndexedDB 寫入變更
+        this.syncWithServer();
+      }, 500); // 去抖延遲時間，可以根據需要調整
+  
     });
-
+  
     window.addEventListener('offline', () => {
       console.log('Network offline');
       void db.updateSyncState({ isOnline: false });
     });
-
+  
     void db.updateSyncState({ isOnline: navigator.onLine });
   }
-
+  
 
   // 將本地變更應用到 CRDT 文檔
   async applyLocalChanges(): Promise<number[]> {

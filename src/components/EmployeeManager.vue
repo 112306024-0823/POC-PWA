@@ -874,6 +874,7 @@ const deleteEmployee = async () => {
   try {
     console.log('開始刪除員工:', employeeToDelete.value.EmployeeID);
     
+    
     // 先從本地資料庫刪除（立即更新頁面）
     await db.deleteEmployee(employeeToDelete.value.EmployeeID);
     
