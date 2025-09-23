@@ -1,4 +1,9 @@
 {
+  "name": "員工管理系統",
+  "short_name": "員工系統",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
   "orientation": "portrait",
   "background_color": "#ffffff",
   "theme_color": "#027be3",

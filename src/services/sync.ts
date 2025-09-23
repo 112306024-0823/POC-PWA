@@ -153,10 +153,7 @@ export class SyncService {
       // 1) 讀未同步變更
       const pending = await db.getUnsyncedChanges();
       console.log('找到未同步變更:', pending.length, '個');
-      if (pending.length === 0) {
-        await db.updateSyncState({ isSyncing: false, lastSyncTimestamp: Date.now() });
-        return true;
-      }
+      // 移除過早返回：即使沒有本地待同步變更，也要抓伺服器 CRDT 並更新本地
   
       // 1.5) 抵銷「對同一暫時 ID 的 create 與 delete」
       // 規則：EmployeeID < 0 視為暫時 ID，若有 delete(暫時ID) → 移除該暫時ID的 create/delete 兩筆變更
@@ -180,7 +177,7 @@ export class SyncService {
       }
   
       // 2) 套用本地變更到 CRDT（拿到這批處理的 changeIds）
-      const processedChangeIds = await this.applyLocalChanges();
+      const processedChangeIds = pending.length > 0 ? await this.applyLocalChanges() : [];
   
       // 3) 拉 server 文檔並合併
       const serverDocument = await this.fetchServerDocument();
@@ -188,8 +185,10 @@ export class SyncService {
         this.document = merge(this.document, serverDocument);
       }
   
-      // 4) 推送合併後的結果到 server（若失敗就不中斷資料，且不標 synced）
-      await this.pushDocumentToServer();
+      // 4) 若有本地變更才推送合併後的結果到 server（避免無意義上傳）
+      if (processedChangeIds.length > 0) {
+        await this.pushDocumentToServer();
+      }
   
       // 5) 推送成功 → 標記這批變更為 synced
       if (processedChangeIds.length) {
@@ -279,12 +278,10 @@ export class SyncService {
     for (const [key, employee] of Object.entries(documentEmployees)) {
       // 跳過臨時 key
       if (key.startsWith('new-') || key.startsWith('temp-')) {
-        console.log('跳過臨時員工記錄:', key);
         continue;
       }
       // 跳過暫時 ID
       if (employee.EmployeeID <= 0) {
-        console.log('跳過暫時 ID 員工:', employee.EmployeeID);
         continue;
       }
       // 跳過已標記刪除

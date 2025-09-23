@@ -683,7 +683,7 @@ const handleSync = async () => {
 const debugChanges = async () => {
   try {
     const allChanges = await db.getUnsyncedChanges();
-    console.log('🔍 當前未同步變更記錄:', allChanges.length, '個');
+    console.log('當前未同步變更記錄:', allChanges.length, '個');
     allChanges.forEach((change, index) => {
       console.log(`變更 ${index + 1}:`, {
         id: change.id,

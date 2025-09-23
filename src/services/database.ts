@@ -90,6 +90,28 @@ export class EmployeeDatabase extends Dexie {
           synced: false
         });
       });
+    } else {
+      // Tombstone: 即使本地沒有該員工，也記錄刪除意圖，確保回線後可同步
+      const tombstone: Employee = {
+        EmployeeID: Number(employeeId),
+        FirstName: '',
+        LastName: '',
+        Department: '',
+        Position: '',
+        HireDate: '',
+        BirthDate: '',
+        Gender: '',
+        Email: '',
+        PhoneNumber: '',
+        Address: '',
+        Status: 'Deleted'
+      };
+      await this.changes.add({
+        employee: tombstone,
+        timestamp: Date.now(),
+        operation: 'delete',
+        synced: false
+      });
     }
   }
 
