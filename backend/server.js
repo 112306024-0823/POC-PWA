@@ -384,7 +384,8 @@ app.post('/api/sync/document', async (req, res) => {
 app.get('/api/employees', async (req, res) => {
   try {
     console.log('API: 正在執行員工查詢...');
-    const result = await sql.query(`
+    const pool = await sql.connect(dbConfig);
+    const result = await pool.request().query(`
       SELECT EmployeeID, FirstName, LastName, Department, Position, 
              HireDate, BirthDate, Gender, Email, PhoneNumber, Address, Status
       FROM [POC].[dbo].[Employee]
@@ -398,7 +399,28 @@ app.get('/api/employees', async (req, res) => {
   } catch (err) {
     console.error('Failed to fetch employees:', err);
     console.error('API 錯誤詳情:', err.message);
-    res.status(500).json({ error: 'Failed to fetch employees', details: err.message });
+
+    // POC Fallback：改回傳目前 CRDT 狀態，避免 500 讓前端卡住
+    try {
+      const employeesFromCrdt = Object.entries(currentDocument.employees)
+        .filter(([key, emp]) => {
+          // 跳過臨時 key 與刪除紀錄
+          if (typeof key === 'string' && (key.startsWith('new-') || key.startsWith('temp-'))) return false;
+          const e = emp || {};
+          const id = Number(e.EmployeeID ?? 0);
+          const status = String(e.Status ?? 'Active').toLowerCase();
+          if (!Number.isInteger(id) || id <= 0) return false;
+          if (status === 'deleted') return false;
+          return true;
+        })
+        .map(([, emp]) => emp);
+
+      console.warn('DB 失敗，回傳 CRDT 快照做為暫時資料。筆數：', employeesFromCrdt.length);
+      return res.status(200).json(employeesFromCrdt);
+    } catch (fallbackErr) {
+      console.error('Fallback 也失敗：', fallbackErr);
+      return res.status(500).json({ error: 'Failed to fetch employees', details: err.message });
+    }
   }
 });
 

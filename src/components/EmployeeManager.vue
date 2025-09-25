@@ -331,13 +331,7 @@ const notify = (type: 'positive' | 'negative' | 'warning' | 'info', message: str
       position: 'top',
       timeout: 3000
     });
-  } else {
-    // 備用方案：使用 console 輸出
-    const prefix = type === 'positive' ? '✅' : 
-                  type === 'negative' ? '❌' : 
-                  type === 'warning' ? '⚠️' : 'ℹ️';
-    console.log(`${prefix} ${message}`);
-  }
+  } 
 };
 
 // 定義原始員工數據類型（可能包含各種格式的數據）
