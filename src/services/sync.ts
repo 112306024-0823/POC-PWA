@@ -16,7 +16,7 @@ export interface EmployeeDocument {
 
 export class SyncService {
   private document: Doc<EmployeeDocument>;
-  private apiBaseUrl = ((import.meta as any).env?.VITE_API_BASE as string) || 'http://localhost:3001/api'; // 後端 API URL
+  private apiBaseUrl = (import.meta.env?.VITE_API_BASE as string) || 'http://localhost:3001/api'; // 後端 API URL
 
   constructor() {
     // 初始化 Automerge 文檔
@@ -83,6 +83,7 @@ export class SyncService {
           case 'create': {
             // 新增：CRDT 內用 new- key；EmployeeID 先設 0 代表待分配
             const { EmployeeID: _unusedEmployeeId, ...rest } = ch.employee;
+            void _unusedEmployeeId;
             const newEmployee = { ...rest, EmployeeID: 0 };
             const createKey = `new-${ch.employee.FirstName}-${ch.employee.LastName}-${ch.timestamp}`;
             doc.employees[createKey] = newEmployee;
@@ -94,6 +95,7 @@ export class SyncService {
             if (!Number.isInteger(idNum) || idNum <= 0) {
               // ID 不合法時，改用 create 流（避免後端誤判 INSERT，造成重複）
               const { EmployeeID: _unused, ...rest } = ch.employee;
+              void _unused;
               const newEmployee = { ...rest, EmployeeID: 0 };
               const createKey = `new-${rest.FirstName ?? ''}-${rest.LastName ?? ''}-${ch.timestamp}`;
               doc.employees[createKey] = newEmployee;

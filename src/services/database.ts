@@ -2,6 +2,7 @@ import Dexie, { type Table } from 'dexie';
 import type { Employee, EmployeeChange, SyncState } from '../types/employee';
 
 export class EmployeeDatabase extends Dexie {
+  //先創三個本地的表，分別是員工表、變更表、同步狀態表
   employees!: Table<Employee>;
   changes!: Table<EmployeeChange>;
   syncState!: Table<SyncState>;
@@ -27,20 +28,23 @@ export class EmployeeDatabase extends Dexie {
         const all = await oldTable.toArray();
         // 轉換：確保 EmployeeID 是 number 並唯一
         const migrated = all
-          .map((e: any) => ({
-            EmployeeID: Number(e?.EmployeeID ?? 0),
-            FirstName: String(e?.FirstName ?? ''),
-            LastName: String(e?.LastName ?? ''),
-            Department: String(e?.Department ?? ''),
-            Position: String(e?.Position ?? ''),
-            HireDate: String(e?.HireDate ?? ''),
-            BirthDate: String(e?.BirthDate ?? ''),
-            Gender: String(e?.Gender ?? ''),
-            Email: String(e?.Email ?? ''),
-            PhoneNumber: String(e?.PhoneNumber ?? ''),
-            Address: String(e?.Address ?? ''),
-            Status: String(e?.Status ?? 'Active'),
-          }))
+          .map((e: unknown) => {
+            const emp = e as Record<string, unknown>;
+            return {
+            EmployeeID: Number(emp?.EmployeeID ?? 0),
+            FirstName: String(emp?.FirstName ?? ''),
+            LastName: String(emp?.LastName ?? ''),
+            Department: String(emp?.Department ?? ''),
+            Position: String(emp?.Position ?? ''),
+            HireDate: String(emp?.HireDate ?? ''),
+            BirthDate: String(emp?.BirthDate ?? ''),
+            Gender: String(emp?.Gender ?? ''),
+            Email: String(emp?.Email ?? ''),
+            PhoneNumber: String(emp?.PhoneNumber ?? ''),
+            Address: String(emp?.Address ?? ''),
+            Status: String(emp?.Status ?? 'Active'),
+          };
+        })
           // 過濾掉沒有合法 EmployeeID 的紀錄（<=0 的視為暫時資料，交由同步後重建）
           .filter((e) => Number.isInteger(e.EmployeeID) && e.EmployeeID > 0);
 
@@ -213,7 +217,7 @@ export class EmployeeDatabase extends Dexie {
   }
   // 直接從 API 獲取員工數據（測試用）
   async fetchEmployeesFromAPI(): Promise<Employee[]> {
-    const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:3001/api';
+    const API_BASE = import.meta.env?.VITE_API_BASE || 'http://localhost:3001/api';
     const response = await fetch(`${API_BASE}/employees`);
     if (!response.ok) {
       throw new Error(`API 請求失敗: ${response.status} ${response.statusText}`);

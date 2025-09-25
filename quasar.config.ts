@@ -15,7 +15,7 @@ export default defineConfig((/* ctx */) => {
     // app boot file (/src/boot)
     // --> boot files are part of "main.js"
     // https://v2.quasar.dev/quasar-cli-vite/boot-files
-    boot: [],
+    boot: ['pwa'],
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#css
     css: ['app.scss'],
@@ -161,20 +161,23 @@ export default defineConfig((/* ctx */) => {
         json.description = '支援離線操作的員工管理系統';
         json.theme_color = '#1976d2';
         json.background_color = '#ffffff';
-        json.start_url = '/';
+        json.start_url = './';
+        json.scope = './';
         json.display = 'standalone';
         json.orientation = 'portrait';
         json.categories = ['business', 'productivity'];
         json.icons = [
           {
-            src: 'icons/favicon-128x128.png',
-            sizes: '128x128',
-            type: 'image/png'
+            src: 'icons/icon-192x192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any maskable'
           },
           {
-            src: 'icons/favicon-96x96.png',
-            sizes: '96x96',
-            type: 'image/png'
+            src: 'icons/icon-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any maskable'
           }
         ];
       },

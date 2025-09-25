@@ -149,7 +149,6 @@ async function loadExistingData() {
 }
 
 // 將 CRDT 文檔同步到資料庫
-// 將 CRDT 文檔同步到資料庫
 async function syncToDatabase() {
   const transaction = new sql.Transaction();
 
@@ -166,21 +165,21 @@ async function syncToDatabase() {
     for (const [employeeIdRaw, employee] of Object.entries(employees)) {
       // 先過濾掉 new-/temp- key
       if (employeeIdRaw.startsWith('new-') || employeeIdRaw.startsWith('temp-')) {
-        console.log('⏩ 跳過臨時員工:', employeeIdRaw);
+        console.log('跳過臨時員工:', employeeIdRaw);
         continue;
       }
 
       // 再轉數字 ID
       const employeeId = Number(employeeIdRaw);
       if (isNaN(employeeId) || employeeId <= 0) {
-        console.warn('⚠️ 跳過無效 ID:', employeeIdRaw);
+        console.warn('跳過無效 ID:', employeeIdRaw);
         continue;
       }
 
       // 刪除（狀態大小寫與空白容忍）
       const statusNorm = String(employee.Status ?? '').trim().toLowerCase();
       if (statusNorm === 'deleted') {
-        console.log('🗑️ 準備刪除員工:', employeeId);
+        console.log('準備刪除員工:', employeeId);
         await transaction.request()
           .input('EmployeeID', sql.Int, employeeId)
           .query(`DELETE FROM [POC].[dbo].[Employee] WHERE EmployeeID = @EmployeeID`);
@@ -199,8 +198,7 @@ async function syncToDatabase() {
 
       if (check.recordset[0].count > 0) {
         // 更新
-        console.log('✏️ 更新員工:', employeeId);
-        // 先做欄位清洗，避免 EPARAM（Invalid string / Invalid date）
+        console.log('更新員工:', employeeId);
         const toJsDateOrNull = (v) => {
           if (!v) return null;
           const d = new Date(v);
@@ -249,7 +247,7 @@ async function syncToDatabase() {
           `);
       } else {
         // 插入（注意：EmployeeID 不手動指定）
-        console.log('➕ 插入新員工:', employeeId);
+        console.log('插入新員工:', employeeId);
         const toJsDateOrNull = (v) => {
           if (!v) return null;
           const d = new Date(v);

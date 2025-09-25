@@ -314,7 +314,7 @@ import { syncService } from '../services/sync';
 import type { Employee } from '../types/employee';
 
 // 後端 API 基底網址（用於除錯拉資料等非同步流程）
-const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:3001/api';
+const API_BASE = import.meta.env?.VITE_API_BASE || 'http://localhost:3001/api';
 
 const $q = useQuasar();
 
@@ -755,7 +755,7 @@ const deleteEmployee = async () => {
     console.log('開始刪除員工:', employeeToDelete.value.EmployeeID);
     
     
-    // 先從本地資料庫刪除（立即更新頁面）
+    // 先從本地資料庫刪除
     await db.deleteEmployee(employeeToDelete.value.EmployeeID);
     
     // 立即更新頁面顯示
