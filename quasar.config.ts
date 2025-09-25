@@ -5,7 +5,7 @@
 import { defineConfig } from '@quasar/app-vite/wrappers';
 
 import wasm from 'vite-plugin-wasm';  
-//import topLevelAwait from 'vite-plugin-top-level-await';
+import topLevelAwait from 'vite-plugin-top-level-await';
 
 export default defineConfig((/* ctx */) => {
   return {
@@ -44,6 +44,18 @@ export default defineConfig((/* ctx */) => {
       // 部署設定
       distDir: 'dist/pwa',
       publicPath: './',
+      
+      // 支援 top-level await 和 WASM
+      rollupOptions: {
+        output: {
+          format: 'es'
+        }
+      },
+      
+      // 確保 WASM 支援
+      esbuild: {
+        target: 'es2022'
+      },
 
       typescript: {
         strict: true,
@@ -67,7 +79,13 @@ export default defineConfig((/* ctx */) => {
       // polyfillModulePreload: true,
       // distDir
 
-      // extendViteConf (viteConf) {},
+      extendViteConf (viteConf) {
+        // 確保 WASM 和 top-level await 支援
+        viteConf.define = {
+          ...viteConf.define,
+          global: 'globalThis'
+        };
+      },
       // viteVuePluginOptions: {},
 
       vitePlugins: [
@@ -82,8 +100,8 @@ export default defineConfig((/* ctx */) => {
           },
           { server: false },
         ],
-        wasm()
-        //topLevelAwait(),
+        wasm(),
+        topLevelAwait(),
       ],
     },
 
