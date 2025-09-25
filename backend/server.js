@@ -362,11 +362,21 @@ app.post('/api/sync/document', async (req, res) => {
       } catch (e) {
         console.warn('無法列出 Deleted 條目:', e);
       }
-      await processOfflineEmployees();
+
+      // POC 容錯：處理暫時員工與資料庫同步失敗時，不要讓整體 500
+      try {
+        await processOfflineEmployees();
+      } catch (e) {
+        console.warn('processOfflineEmployees 失敗，略過此次處理：', e);
+      }
       
-      // 同步到資料庫（只處理已有 ID 的更新/刪除）
-      await syncToDatabase();
-      console.log('Document merged and synced to database');
+      try {
+        // 同步到資料庫（只處理已有 ID 的更新/刪除）
+        await syncToDatabase();
+        console.log('Document merged and synced to database');
+      } catch (e) {
+        console.warn('syncToDatabase 失敗（可能是 DB 未連線或權限問題），暫時略過：', e);
+      }
     }
     
     res.json({ 
