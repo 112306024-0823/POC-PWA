@@ -16,7 +16,11 @@ export interface EmployeeDocument {
 
 export class SyncService {
   private document: Doc<EmployeeDocument>;
-  private apiBaseUrl = (import.meta.env?.VITE_API_BASE as string) || 'http://localhost:3001/api'; // 後端 API URL
+  private apiBaseUrl = (() => {
+    const raw = (import.meta.env?.VITE_API_BASE as string) || 'http://localhost:3001/api';
+    if (raw.endsWith('/api')) return raw;
+    return `${String(raw).replace(/\/+$/, '')}/api`;
+  })(); // 後端 API URL
 
   constructor() {
     // 初始化 Automerge 文檔

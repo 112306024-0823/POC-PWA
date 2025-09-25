@@ -217,8 +217,11 @@ export class EmployeeDatabase extends Dexie {
   }
   // 直接從 API 獲取員工數據（測試用）
   async fetchEmployeesFromAPI(): Promise<Employee[]> {
-    const API_BASE = import.meta.env?.VITE_API_BASE || 'http://localhost:3001/api';
-    const response = await fetch(`${API_BASE}/employees`);
+    const rawBase = import.meta.env?.VITE_API_BASE || 'http://localhost:3001/api';
+    const normalizedBase = rawBase.endsWith('/api')
+      ? rawBase
+      : `${String(rawBase).replace(/\/+$/, '')}/api`;
+    const response = await fetch(`${normalizedBase}/employees`);
     if (!response.ok) {
       throw new Error(`API 請求失敗: ${response.status} ${response.statusText}`);
     }
