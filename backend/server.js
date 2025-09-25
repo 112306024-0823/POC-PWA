@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 3001;
 // 中間件
 app.use(cors({
   origin: [
-    'https://pwa-poc.vercel.app', // Vercel 部署後的域名
+    'https://pwa-employee.vercel.app', // 實際 Vercel 前端域名
     'http://localhost:9000',
     'http://localhost:9200'
   ],
@@ -22,6 +22,11 @@ app.use(cors({
 }));
 app.use(bodyParser.json());
 app.use(bodyParser.raw({ type: 'application/octet-stream', limit: '10mb' }));
+
+// 根路由（避免 Render 顯示 Cannot GET /）
+app.get('/', (req, res) => {
+  res.type('text/plain').send('Employee API is running. Use /api/health');
+});
 
 // 資料庫配置 (從.env檔案讀取)
 const dbConfig = {
