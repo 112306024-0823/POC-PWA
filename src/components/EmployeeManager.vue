@@ -314,7 +314,11 @@ import { syncService } from '../services/sync';
 import type { Employee } from '../types/employee';
 
 // 後端 API 基底網址（用於除錯拉資料等非同步流程）
-const API_BASE = import.meta.env?.VITE_API_BASE || 'http://localhost:3001/api';
+const API_BASE = (() => {
+  const raw = import.meta.env?.VITE_API_BASE || 'http://localhost:3001/api';
+  if (raw.endsWith('/api')) return raw;
+  return `${String(raw).replace(/\/+$/, '')}/api`;
+})();
 
 const $q = useQuasar();
 
