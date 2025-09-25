@@ -318,12 +318,32 @@ async function syncToDatabase() {
 // API 路由
 
 // 健康檢查
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
+  const startedAt = Date.now();
+  let dbConnected = false;
+  let dbError = null;
+  try {
+    const pool = await sql.connect(dbConfig);
+    const r = await pool.request().query('SELECT 1 AS ok');
+    dbConnected = Array.isArray(r?.recordset) && r.recordset.length > 0;
+  } catch (e) {
+    dbError = e?.message || String(e);
+  }
+
   res.json({ 
     status: 'OK', 
     timestamp: new Date().toISOString(),
     version: '1.0.0',
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    db: {
+      connected: dbConnected,
+      error: dbError
+    },
+    crdt: {
+      employeesCount: (() => { try { return Object.keys(currentDocument.employees || {}).length; } catch { return 0; } })(),
+      lastModified: (() => { try { return currentDocument.lastModified || null; } catch { return null; } })()
+    },
+    responseMs: Date.now() - startedAt
   });
 });
 
