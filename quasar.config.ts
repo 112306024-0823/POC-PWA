@@ -40,6 +40,10 @@ export default defineConfig((/* ctx */) => {
         browser: ['es2022', 'firefox115', 'chrome115', 'safari14'],
         node: 'node20',
       },
+      
+      // 部署設定
+      distDir: 'dist/pwa',
+      publicPath: './',
 
       typescript: {
         strict: true,

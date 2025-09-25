@@ -10,11 +10,20 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // 中間件
-app.use(cors());
+app.use(cors({
+  origin: [
+    'https://pwa-poc.vercel.app', // Vercel 部署後的域名
+    'http://localhost:9000',
+    'http://localhost:9200'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(bodyParser.json());
 app.use(bodyParser.raw({ type: 'application/octet-stream', limit: '10mb' }));
 
-// 資料庫配置 (從 .env 檔案讀取)
+// 資料庫配置 (從.env檔案讀取)
 const dbConfig = {
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
@@ -305,7 +314,12 @@ async function syncToDatabase() {
 
 // 健康檢查
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    version: '1.0.0',
+    environment: process.env.NODE_ENV || 'development'
+  });
 });
 
 // 獲取 CRDT 文檔
