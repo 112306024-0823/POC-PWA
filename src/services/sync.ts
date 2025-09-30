@@ -381,7 +381,7 @@ export class SyncService {
     ).length;
     const validRecords = totalEmployees - tempRecords;
     
-    console.log('🔍 CRDT 文檔狀態:');
+    console.log('CRDT 文檔狀態:');
     console.log(`  總記錄數: ${totalEmployees}`);
     console.log(`  有效記錄: ${validRecords}`);
     console.log(`  臨時記錄: ${tempRecords}`);

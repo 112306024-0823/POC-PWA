@@ -12,7 +12,6 @@ const PORT = process.env.PORT || 3001;
 // 中間件
 app.use(cors({
   origin: [
-    'https://pwa-employee.vercel.app', // 實際 Vercel 前端域名
     'http://localhost:9000',
     'http://localhost:9200'
   ],
@@ -313,8 +312,6 @@ async function syncToDatabase() {
   }
 }
 
-
-
 // API 路由
 
 // 健康檢查
@@ -456,190 +453,23 @@ app.get('/api/employees', async (req, res) => {
 
 // 新增員工（傳統 REST API）
 app.post('/api/employees', async (req, res) => {
-  try {
-    console.log('POST /api/employees - 收到請求:', req.body);
-    
-    const employee = req.body;
-    
-    // 基本驗證
-    if (!employee.FirstName || !employee.LastName) {
-      return res.status(400).json({ 
-        error: 'FirstName and LastName are required' 
-      });
-    }
-    
-    console.log('準備插入員工資料:', employee);
-    
-    // 使用參數化查詢來防止 SQL 注入
-    const sanitized = sanitizeEmployee(employee);
-    const request = new sql.Request();
-    const result = await request
-      .input('FirstName', sql.NVarChar, sanitized.FirstName)
-      .input('LastName', sql.NVarChar, sanitized.LastName)
-      .input('Department', sql.NVarChar, sanitized.Department)
-      .input('Position', sql.NVarChar, sanitized.Position)
-      .input('HireDate', sql.Date, sanitized.HireDate)
-      .input('BirthDate', sql.Date, sanitized.BirthDate)
-      .input('Gender', sql.NVarChar, sanitized.Gender)
-      .input('Email', sql.NVarChar, sanitized.Email)
-      .input('PhoneNumber', sql.NVarChar, sanitized.PhoneNumber)
-      .input('Address', sql.NVarChar, sanitized.Address)
-      .input('Status', sql.NVarChar, sanitized.Status)
-      .query(`
-        INSERT INTO [POC].[dbo].[Employee] (
-          FirstName, LastName, Department, Position,
-          HireDate, BirthDate, Gender, Email, PhoneNumber, Address, Status
-        )
-        OUTPUT INSERTED.EmployeeID
-        VALUES (
-          @FirstName, @LastName, @Department, @Position,
-          @HireDate, @BirthDate, @Gender, @Email, @PhoneNumber, @Address, @Status
-        )
-      `);
-    
-    console.log('SQL 插入成功:', result);
-    
-    // 取得自動生成的 EmployeeID
-    const employeeId = result.recordset[0].EmployeeID;
-    console.log('新生成的 EmployeeID:', employeeId);
-    
-    const newEmployee = {
-      EmployeeID: employeeId,
-      FirstName: employee.FirstName || '',
-      LastName: employee.LastName || '',
-      Department: employee.Department || '',
-      Position: employee.Position || '',
-      HireDate: employee.HireDate || null,
-      BirthDate: employee.BirthDate || null,
-      Gender: employee.Gender || '',
-      Email: employee.Email || '',
-      PhoneNumber: employee.PhoneNumber || '',
-      Address: employee.Address || '',
-      Status: employee.Status || 'Active'
-    };
-    
-    // 更新 CRDT 文檔
-    currentDocument = Automerge.change(currentDocument, doc => {
-      doc.employees[employeeId] = newEmployee;
-      doc.lastModified = Date.now();
-    });
-    
-    console.log('CRDT 文檔已更新');
-    
-    res.json({ success: true, employee: newEmployee });
-  } catch (err) {
-    console.error('Failed to create employee:', err);
-    res.status(500).json({ error: 'Failed to create employee' });
-  }
+  return res.status(410).json({
+    error: 'This endpoint is disabled. Use CRDT sync via /api/sync/document.',
+  });
 });
 
 // 更新員工（傳統 REST API）
 app.put('/api/employees/:id', async (req, res) => {
-  try {
-    const employeeId = req.params.id;
-    const employee = req.body;
-    
-    console.log('PUT /api/employees/:id - 收到請求:', { employeeId, employee });
-    
-    // 基本驗證
-    if (!employee.FirstName || !employee.LastName) {
-      return res.status(400).json({ 
-        error: 'FirstName and LastName are required' 
-      });
-    }
-    
-    // 使用參數化查詢來防止 SQL 注入
-    const sanitized = sanitizeEmployee(employee);
-    const request = new sql.Request();
-    const result = await request
-      .input('EmployeeID', sql.Int, employeeId)
-      .input('FirstName', sql.NVarChar, sanitized.FirstName)
-      .input('LastName', sql.NVarChar, sanitized.LastName)
-      .input('Department', sql.NVarChar, sanitized.Department)
-      .input('Position', sql.NVarChar, sanitized.Position)
-      .input('HireDate', sql.Date, sanitized.HireDate)
-      .input('BirthDate', sql.Date, sanitized.BirthDate)
-      .input('Gender', sql.NVarChar, sanitized.Gender)
-      .input('Email', sql.NVarChar, sanitized.Email)
-      .input('PhoneNumber', sql.NVarChar, sanitized.PhoneNumber)
-      .input('Address', sql.NVarChar, sanitized.Address)
-      .input('Status', sql.NVarChar, sanitized.Status)
-      .query(`
-        UPDATE [POC].[dbo].[Employee] SET
-          FirstName = @FirstName,
-          LastName = @LastName,
-          Department = @Department,
-          Position = @Position,
-          HireDate = @HireDate,
-          BirthDate = @BirthDate,
-          Gender = @Gender,
-          Email = @Email,
-          PhoneNumber = @PhoneNumber,
-          Address = @Address,
-          Status = @Status
-        WHERE EmployeeID = @EmployeeID
-      `);
-    
-    console.log('SQL 更新成功:', result);
-    
-    const updatedEmployee = {
-      EmployeeID: employeeId,
-      FirstName: employee.FirstName || '',
-      LastName: employee.LastName || '',
-      Department: employee.Department || '',
-      Position: employee.Position || '',
-      HireDate: employee.HireDate || null,
-      BirthDate: employee.BirthDate || null,
-      Gender: employee.Gender || '',
-      Email: employee.Email || '',
-      PhoneNumber: employee.PhoneNumber || '',
-      Address: employee.Address || '',
-      Status: employee.Status || '在職'
-    };
-    
-    // 更新 CRDT 文檔
-    currentDocument = Automerge.change(currentDocument, doc => {
-      doc.employees[employeeId] = updatedEmployee;
-      doc.lastModified = Date.now();
-    });
-    
-    console.log('CRDT 文檔已更新');
-    
-    res.json({ success: true, employee: updatedEmployee });
-  } catch (err) {
-    console.error('Failed to update employee:', err);
-    res.status(500).json({ error: 'Failed to update employee' });
-  }
+  return res.status(410).json({
+    error: 'This endpoint is disabled. Use CRDT sync via /api/sync/document.',
+  });
 });
 
 // 刪除員工（傳統 REST API）
 app.delete('/api/employees/:id', async (req, res) => {
-  try {
-    const employeeId = req.params.id;
-    
-    console.log('DELETE /api/employees/:id - 收到請求:', { employeeId });
-    
-    // 使用參數化查詢來防止 SQL 注入
-    const request = new sql.Request();
-    const result = await request
-      .input('EmployeeID', sql.Int, employeeId)
-      .query(`DELETE FROM [POC].[dbo].[Employee] WHERE EmployeeID = @EmployeeID`);
-    
-    console.log('SQL 刪除成功:', result);
-    
-    // 更新 CRDT 文檔
-    currentDocument = Automerge.change(currentDocument, doc => {
-      delete doc.employees[employeeId];
-      doc.lastModified = Date.now();
-    });
-    
-    console.log('CRDT 文檔已更新，員工已刪除');
-    
-    res.json({ success: true, deletedId: employeeId });
-  } catch (err) {
-    console.error('Failed to delete employee:', err);
-    res.status(500).json({ error: 'Failed to delete employee' });
-  }
+  return res.status(410).json({
+    error: 'This endpoint is disabled. Use CRDT sync via /api/sync/document.',
+  });
 });
 
 // 處理離線新增的員工
