@@ -39,7 +39,7 @@
 
 ### 後端
 - **Node.js + Express** - REST API 服務器
-- **SQL Server** - 主資料庫
+- **SQL Server / Supabase (Postgres)** - 依環境切換資料庫提供者
 - **Automerge** - 後端 CRDT 處理
 - **CORS** - 跨域請求支援
 
@@ -50,7 +50,7 @@
 - SQL Server
 - npm 或 yarn
 
-### 1. 前端設置
+### 1. 前端設置（自動選擇 API）
 
 ```bash
 # 在根目錄
@@ -66,7 +66,11 @@ npm run build
 ```
 pwa模式啟動：npx quasar dev -m pwa
 
-### 2. 後端設置
+前端會依據目前網址自動決定 API 基底（無需手動調整）：
+- localhost / IP → `http://localhost:3001/api`
+- `*.vercel.app`（或其他雲端網域）→ `https://poc-pwa.onrender.com/api`
+
+### 2. 後端設置（支援 SQL Server 與 Supabase）
 
 ```bash
 # 進入後端目錄
@@ -75,12 +79,18 @@ cd pwa-project/backend
 # 安裝依賴
 npm install
 
-# 設定資料庫連接（編輯 server.js 中的 dbConfig）
-# 請更新以下資訊：
-# - user: 您的 SQL Server 使用者名稱
-# - password: 您的 SQL Server 密碼
-# - server: SQL Server 主機位址
-# - database: 資料庫名稱
+# 設定環境變數（於本機 .env 或部署環境變數）
+# 本機（SQL Server）：
+#   DB_PROVIDER=sqlserver
+#   DB_USER=...
+#   DB_PASSWORD=...
+#   DB_SERVER=...
+#   DB_PORT=1433
+#   DB_DATABASE=...
+# 雲端（Supabase）：
+#   DB_PROVIDER=supabase
+#   SUPABASE_URL=https://<project>.supabase.co
+#   SUPABASE_SERVICE_ROLE=<server role key>
 
 # 啟動後端服務器
 npm run dev
@@ -88,22 +98,39 @@ npm run dev
 
 ### 3. 資料庫設置
 
-確保您的 SQL Server 中有以下資料表結構：
+確保您的資料庫（SQL Server 或 Supabase）有以下資料表結構（欄位一致）：
 
 ```sql
-CREATE TABLE Employee (
-    EmployeeID NVARCHAR(50) PRIMARY KEY,
-    FirstName NVARCHAR(50),
-    LastName NVARCHAR(50),
-    Department NVARCHAR(100),
-    Position NVARCHAR(100),
-    HireDate DATE,
-    BirthDate DATE,
-    Gender NVARCHAR(10),
-    Email NVARCHAR(100),
-    PhoneNumber NVARCHAR(20),
-    Address NVARCHAR(255),
-    Status NVARCHAR(20)
+-- SQL Server（型別可依現況微調）
+CREATE TABLE [POC].[dbo].[Employee] (
+  EmployeeID INT IDENTITY(1,1) PRIMARY KEY,
+  FirstName NVARCHAR(50),
+  LastName NVARCHAR(50),
+  Department NVARCHAR(100),
+  Position NVARCHAR(100),
+  HireDate DATE,
+  BirthDate DATE,
+  Gender NVARCHAR(10),
+  Email NVARCHAR(100),
+  PhoneNumber NVARCHAR(20),
+  Address NVARCHAR(255),
+  Status NVARCHAR(20) DEFAULT 'Active'
+);
+
+-- Supabase（Postgres）
+CREATE TABLE IF NOT EXISTS public.employee (
+  "EmployeeID" SERIAL PRIMARY KEY,
+  "FirstName" TEXT NOT NULL,
+  "LastName" TEXT NOT NULL,
+  "Department" TEXT,
+  "Position" TEXT,
+  "HireDate" DATE,
+  "BirthDate" DATE,
+  "Gender" TEXT,
+  "Email" TEXT,
+  "PhoneNumber" TEXT,
+  "Address" TEXT,
+  "Status" TEXT DEFAULT 'Active'
 );
 ```
 
@@ -183,7 +210,7 @@ POST   /api/sync/document       # 合併 CRDT 文檔
 
 1. 確保後端服務器在 `http://localhost:3001` 運行
 2. 前端開發服務器在 `http://localhost:9000` 運行
-3. 修改 `src/services/sync.ts` 中的 `apiBaseUrl` 以指向正確的後端位址
+3. 無需手動設定 API 位址，前端會依網址自動選擇（見「前端設置」）
 
 ### 部署到生產環境
 
@@ -194,8 +221,7 @@ POST   /api/sync/document       # 合併 CRDT 文檔
    ```
 
 2. **後端部署**
-   - 設定正確的資料庫連接
-   - 設定環境變數
+   - 設定環境變數（DB_PROVIDER 與對應的 SQL Server 或 Supabase 連線資訊）
    - 使用 PM2 或類似工具管理 Node.js 進程
 
 ### 自定義配置
@@ -227,7 +253,7 @@ POST   /api/sync/document       # 合併 CRDT 文檔
 
 - **前端**: 瀏覽器開發者工具 Console
 - **後端**: 服務器 console 輸出
-- **資料庫**: SQL Server 錯誤日誌
+- **資料庫**: SQL Server 或 Supabase 日誌（視提供者而定）
 
 ## 授權
 

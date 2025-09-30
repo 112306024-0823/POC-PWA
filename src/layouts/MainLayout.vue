@@ -13,5 +13,4 @@
 </template>
 
 <script setup lang="ts">
-//  - 簡潔的主佈局
 </script>

@@ -53,6 +53,7 @@ export default defineConfig((/* ctx */) => {
       },
       
       // 確保 WASM 支援
+    
       esbuild: {
         target: 'es2022'
       },

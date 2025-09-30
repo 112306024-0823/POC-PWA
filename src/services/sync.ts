@@ -393,7 +393,7 @@ export class SyncService {
     }
   }
 
-  // 定期同步（如果在線）
+  // 定期同步（如果online）
   startPeriodicSync(intervalMs: number = 30000) {
     setInterval(() => {
       void (async () => {

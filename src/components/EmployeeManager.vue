@@ -334,90 +334,7 @@ const notify = (type: 'positive' | 'negative' | 'warning' | 'info', message: str
   } 
 };
 
-// 定義原始員工數據類型（可能包含各種格式的數據）
-interface RawEmployeeData {
-  EmployeeID?: string | number;
-  FirstName?: string;
-  LastName?: string;
-  Department?: string;
-  Position?: string;
-  HireDate?: string | Date;
-  BirthDate?: string | Date;
-  Gender?: string;
-  Email?: string;
-  PhoneNumber?: string;
-  Address?: string;
-  Status?: string;
-}
-
-// 安全的日期轉換函數
-const formatDateToString = (date: string | Date | undefined | null): string => {
-  if (!date) return '';
-  try {
-    // 如果已經是正確的格式（YYYY-MM-DD），直接返回
-    if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return date;
-    }
-    
-    const dateObj = new Date(date);
-    if (isNaN(dateObj.getTime())) return '';
-    
-    const year = dateObj.getFullYear();
-    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const day = String(dateObj.getDate()).padStart(2, '0');
-    
-    return `${year}-${month}-${day}`;
-  } catch {
-    return '';
-  }
-};
-
-// 定義可能的選項類型
-type SelectOption = {
-  label: string;
-  value: string;
-};
-
-// 清理員工數據，確保可以被 IndexedDB 序列化
-const cleanEmployeeData = (employee: RawEmployeeData): Employee => {
-  // 特殊處理可能是對象的欄位
-  const cleanGender = (gender: string | SelectOption | undefined | null): string => {
-    if (!gender) return '';
-    if (typeof gender === 'string') return gender;
-    if (typeof gender === 'object') {
-      if (gender.value) return String(gender.value);
-      // 如果是對象但沒有 value 屬性，返回空字符串而不是 [object Object]
-      return '';
-    }
-    return '';
-  };
-
-  const cleanStatus = (status: string | SelectOption | undefined | null): string => {
-    if (!status) return 'Active';
-    if (typeof status === 'string') return status;
-    if (typeof status === 'object') {
-      if (status.value) return String(status.value);
-      // 如果是對象但沒有 value 屬性，返回預設值而不是 [object Object]
-      return 'Active';
-    }
-    return 'Active';
-  };
-
-  return {
-    EmployeeID: Number(employee.EmployeeID) || 0,
-    FirstName: String(employee.FirstName || ''),
-    LastName: String(employee.LastName || ''),
-    Department: String(employee.Department || ''),
-    Position: String(employee.Position || ''),
-    HireDate: formatDateToString(employee.HireDate),
-    BirthDate: formatDateToString(employee.BirthDate),
-    Gender: cleanGender(employee.Gender),
-    Email: String(employee.Email || ''),
-    PhoneNumber: String(employee.PhoneNumber || ''),
-    Address: String(employee.Address || ''),
-    Status: cleanStatus(employee.Status)
-  };
-};
+// 簡化：直接使用 Employee 類型，不需要複雜的序列化處理
 
 // 資料狀態
 const employees = ref<Employee[]>([]);
@@ -557,12 +474,11 @@ const loadEmployees = async () => {
       console.log('本地沒有資料，從 API 載入...');
       // 如果本地沒有資料，從 API 載入
       const apiEmployees = await db.fetchEmployeesFromAPI();
-      // 清理數據以確保可以序列化
-      employees.value = apiEmployees.map((emp: RawEmployeeData) => cleanEmployeeData(emp));
+      employees.value = apiEmployees;
       console.log('從 API 載入的員工數量:', apiEmployees.length);
     } else {
-      // 清理本地數據
-      employees.value = localEmployees.map((emp: RawEmployeeData) => cleanEmployeeData(emp));
+      // 直接使用本地數據
+      employees.value = localEmployees;
       console.log('使用本地資料，員工數量:', localEmployees.length);
     }
     
@@ -615,23 +531,13 @@ const updateSyncStatus = async () => {
   }
 };
 
-// 已移除手動同步功能
 
-// 調試功能：檢查變更記錄
-// 已移除變更記錄除錯
-
-       // 強制清理所有變更記錄
-      // 已移除清除變更記錄
-
-       // 調試：檢查 CRDT 文檔狀態
-      // 已移除 CRDT 除錯
 
 const handleRefresh = async () => {
   try {
     const apiEmployees = await db.fetchEmployeesFromAPI();
-    // 清理數據以確保可以序列化
-    employees.value = apiEmployees.map((emp: RawEmployeeData) => cleanEmployeeData(emp));
-  await updateSyncStatus();
+    employees.value = apiEmployees;
+    await updateSyncStatus();
     notify('positive', '資料已重新載入');
   } catch (error) {
     console.error('重新載入失敗:', error);
@@ -639,11 +545,10 @@ const handleRefresh = async () => {
   }
 };
 
-// 已移除測試載入
 
 
 function makeTempEmployeeId() {
-  return -Date.now(); // 或改用 uuid()
+  return -Date.now(); 
 }
 const openAddDialog = () => {
   isEditing.value = false;
@@ -666,8 +571,7 @@ const openAddDialog = () => {
 
 const editEmployee = (employee: Employee) => {
   isEditing.value = true;
-  // 確保編輯時的數據是乾淨的，避免序列化問題
-  currentEmployee.value = cleanEmployeeData(employee);
+  currentEmployee.value = { ...employee };
   showDialog.value = true;
 };
 
@@ -684,21 +588,20 @@ const saveEmployee = async () => {
 
   saving.value = true;
   try {
-    // 首先清理當前員工數據，確保沒有不可序列化的對象
-    const cleanCurrentEmployee = cleanEmployeeData(currentEmployee.value);
+    const employeeData = { ...currentEmployee.value };
     
     if (isEditing.value) {
-      // ======= 更新員工（不直接打 REST）=======
-      console.log('開始更新員工:', cleanCurrentEmployee);
+      // 更新員工
+      console.log('觸發更新員工:', employeeData);
 
       // 1) 寫入本地 + 記錄變更
-      await db.updateEmployee(cleanCurrentEmployee);
+      await db.updateEmployee(employeeData);
 
       // 2) 立即更新畫面
-      const idx = employees.value.findIndex(e => e.EmployeeID === cleanCurrentEmployee.EmployeeID);
-      if (idx !== -1) employees.value[idx] = cleanCurrentEmployee;
+      const idx = employees.value.findIndex(e => e.EmployeeID === employeeData.EmployeeID);
+      if (idx !== -1) employees.value[idx] = employeeData;
 
-      // 3) 在線就觸發同步（交給 syncService）
+      // 3) 在線就觸發同步
       if (navigator.onLine) {
         const ok = await syncService.manualSync();
         notify(ok ? 'positive' : 'warning', ok ? '同步完成' : '同步失敗，稍後再試');
@@ -706,28 +609,26 @@ const saveEmployee = async () => {
         notify('warning', '離線模式：資料已保存到本地，將在連線後自動同步');
       }
     } else {
-  // ======= 新增員工（不直接打 REST；使用暫時 ID）=======
-  console.log('開始新增員工:', cleanCurrentEmployee);
+      // 新增員工
+      console.log('觸發新增員工:', employeeData);
 
-  // 若沒有合法的伺服器 ID，給一個暫時負數 ID（避免 0）
-  if (!cleanCurrentEmployee.EmployeeID || cleanCurrentEmployee.EmployeeID <= 0) {
-    cleanCurrentEmployee.EmployeeID = -Date.now(); // 或改成 uuid()
-  }
+      // 若沒有合法的伺服器 ID，給一個暫時負數 ID
+      if (!employeeData.EmployeeID || employeeData.EmployeeID <= 0) {
+        employeeData.EmployeeID = -Date.now();
+      }
+      // 1) 寫入本地 + 記錄變更
+      await db.addEmployee(employeeData);
+      // 2) 立即更新畫面
+      employees.value.push(employeeData);
 
-  // 1) 寫入本地 + 記錄變更
-  await db.addEmployee(cleanCurrentEmployee);
-
-  // 2) 立即更新畫面
-  employees.value.push(cleanCurrentEmployee);
-
-  // 3) 在線就觸發同步（交給 syncService；伺服器會分配正式 ID）
-  if (navigator.onLine) {
-    const ok = await syncService.manualSync();
-    notify(ok ? 'positive' : 'warning', ok ? '同步完成（將回填正式 ID）' : '同步失敗，稍後再試');
-  } else {
-    notify('warning', '離線模式：資料已保存到本地，將在連線後自動同步');
-  }
-}
+      // 3) 在線就觸發同步
+      if (navigator.onLine) {
+        const ok = await syncService.manualSync();
+        notify(ok ? 'positive' : 'warning', ok ? '同步完成（將回填正式 ID）' : '同步失敗，稍後再試');
+      } else {
+        notify('warning', '離線模式：資料已保存到本地，將在連線後自動同步');
+      }
+    }
     
     // 更新同步狀態
     await updateSyncStatus();
@@ -752,45 +653,34 @@ const deleteEmployee = async () => {
   try {
     console.log('開始刪除員工:', employeeToDelete.value.EmployeeID);
     
-    
-    // 先從本地資料庫刪除
+    // 1. 從本地 IndexedDB 刪除
     await db.deleteEmployee(employeeToDelete.value.EmployeeID);
     
-    // 立即更新頁面顯示
+    // 2. 立即更新 UI 顯示
     const index = employees.value.findIndex(emp => emp.EmployeeID === employeeToDelete.value!.EmployeeID);
     if (index !== -1) {
       employees.value.splice(index, 1);
     }
-    // 在線：先呼叫後端 REST 刪除，以確保資料庫確實刪除；再進行 CRDT 同步
-    if (isOnline.value) {
-      try {
-        const resp = await fetch(`${API_BASE}/employees/${employeeToDelete.value.EmployeeID}`, { method: 'DELETE' });
-        if (!resp.ok) {
-          throw new Error(`HTTP ${resp.status}`);
-        }
-        // 後端已刪除，進一步同步 CRDT 狀態
-        const ok = await syncService.manualSync();
-        if (ok) {
-          await clearPendingChangesForEmployee(employeeToDelete.value.EmployeeID);
-          notify('positive', '員工刪除成功並已同步');
-        } else {
-          notify('warning', '已刪除，但同步狀態待完成');
-        }
-      } catch (e) {
-        console.warn('REST 刪除失敗，改由離線同步處理：', e);
-        const ok = await syncService.manualSync();
-        notify(ok ? 'positive' : 'warning', ok ? '刪除已同步' : '刪除變更尚未同步，稍後再試');
+    
+    // 3. 統一使用 CRDT 同步（無論線上離線）
+    if (navigator.onLine) {
+      const ok = await syncService.manualSync();
+      if (ok) {
+        await clearPendingChangesForEmployee(employeeToDelete.value.EmployeeID);
+        notify('positive', '員工刪除成功並已同步');
+      } else {
+        notify('warning', '刪除成功，但同步失敗，稍後再試');
       }
     } else {
-      notify('warning', '離線模式：資料已從本地刪除，將在連線後自動同步');
+      notify('warning', '離線模式：資料已刪除，將在連線後自動同步');
     }
     
-    // 更新同步狀態
+    // 4. 更新同步狀態
     await updateSyncStatus();
     
     showDeleteConfirm.value = false;
     employeeToDelete.value = null;
-  } catch (error) {
+  } catch (error) { 
     console.error('刪除失敗:', error);
     notify('negative', `刪除失敗: ${error instanceof Error ? error.message : String(error)}`);
   } finally {
@@ -832,13 +722,12 @@ onMounted(async () => {
   try {
     console.log('強制從 API 載入資料...');
     const apiEmployees = await db.fetchEmployeesFromAPI();
-    // 清理數據以確保可以序列化
-    employees.value = apiEmployees.map((emp: RawEmployeeData) => cleanEmployeeData(emp));
+    employees.value = apiEmployees;
     console.log('從 API 載入的員工數量:', apiEmployees.length);
     await updateSyncStatus();
   } catch (error) {
     console.error('從 API 載入失敗，嘗試本地資料:', error);
-  await loadEmployees();
+    await loadEmployees();
   }
   
   // 啟動定期同步
